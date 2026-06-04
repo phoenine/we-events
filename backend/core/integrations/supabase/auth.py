@@ -181,14 +181,34 @@ class SupabaseAuthManager:
             if not user or not getattr(user, "user", None):
                 return None
 
+            profile: Dict[str, Any] = {}
+            try:
+                service_client = self.get_client(use_service=True)
+                profile_response = (
+                    service_client.table("profiles")
+                    .select("username,nickname,role,status,avatar_path")
+                    .eq("user_id", str(user.user.id))
+                    .limit(1)
+                    .execute()
+                )
+                rows = profile_response.data or []
+                profile = rows[0] if rows else {}
+            except Exception as profile_err:
+                logger.warning(f"读取用户 profile 失败: {profile_err}")
+
+            if (profile.get("status") or "active") != "active":
+                return None
+
             return {
                 "id": str(user.user.id),
                 "email": user.user.email,
-                "username": user.user.user_metadata.get(
-                    "username",
-                    user.user.email,
-                ),
-                "role": "authenticated",
+                "username": profile.get("username")
+                or user.user.user_metadata.get("username")
+                or user.user.email,
+                "nickname": profile.get("nickname"),
+                "avatar_path": profile.get("avatar_path"),
+                "role": profile.get("role") or "user",
+                "status": profile.get("status") or "active",
             }
 
         except Exception as e:

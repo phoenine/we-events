@@ -10,7 +10,10 @@ from core.integrations.supabase.settings import settings
 
 
 class AuthSessionStore:
-    """认证会话存储 - 负责 auth_sessions / auth_session_secret 操作"""
+    """公众号扫码认证会话存储。"""
+
+    SESSION_TABLE = "wechat_auth_sessions"
+    SECRET_TABLE = "wechat_auth_session_secret"
 
     def __init__(self):
         self.client = supabase_client
@@ -34,10 +37,10 @@ class AuthSessionStore:
 
         try:
             await self.client.insert(
-                "auth_sessions",
+                self.SESSION_TABLE,
                 {
                     "id": sid,
-                    "user_id": uid,
+                    "maintained_by": uid,
                     "status": "waiting",
                     "expires_at": (
                         datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
@@ -88,7 +91,7 @@ class AuthSessionStore:
                 f"[auth-session-store] update session_id={session_id} payload={payload}"
             )
             await self.client.update(
-                "auth_sessions",
+                self.SESSION_TABLE,
                 payload,
                 filters={"id": session_id},
             )
@@ -130,7 +133,7 @@ class AuthSessionStore:
         )
         try:
             await self.client.upsert(
-                "auth_session_secret",
+                self.SECRET_TABLE,
                 {
                     "session_id": session_id,
                     "token": token or "",

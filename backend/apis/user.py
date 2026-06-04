@@ -94,20 +94,20 @@ async def get_user_info(current_user: Dict[str, Any] = Depends(get_current_user)
 
         # 基础信息来自 Supabase Auth
         email = current_user.get("email") or ""
-        metadata = current_user.get("user_metadata") or {}
-        role = metadata.get("role", "user")
+        username = profile.get("username") or current_user.get("username") or email
+        status_value = profile.get("status") or "active"
 
         return success_response(
             {
                 "id": user_id,
                 "email": email,
-                "username": metadata.get("username") or email,
+                "username": username,
                 "nickname": profile.get("nickname")
-                or metadata.get("nickname")
+                or username
                 or email,
-                "avatar": await _resolve_avatar_url(profile.get("avatar_url") or ""),
-                "role": role,
-                "is_active": True,
+                "avatar": await _resolve_avatar_url(profile.get("avatar_path") or ""),
+                "role": profile.get("role") or "user",
+                "is_active": status_value == "active",
             }
         )
     except HTTPException:
@@ -199,27 +199,26 @@ async def update_user_info(
             )
 
         profile_patch: Dict[str, Any] = {}
+        if payload.username is not None:
+            profile_patch["username"] = payload.username.strip()
         if payload.nickname is not None:
             profile_patch["nickname"] = payload.nickname.strip()
         if payload.avatar is not None:
-            profile_patch["avatar_url"] = _extract_avatar_object_path(payload.avatar)
+            profile_patch["avatar_path"] = _extract_avatar_object_path(payload.avatar)
+        if payload.is_active is not None:
+            profile_patch["status"] = "active" if payload.is_active else "disabled"
         if profile_patch:
             await profile_repo.upsert_profile(user_id, profile_patch)
 
-        # 尝试同步 Supabase Auth 用户邮箱/用户名（用户名写入 user_metadata）
+        # 尝试同步 Supabase Auth 用户邮箱。业务用户名/角色/状态保存在 profiles。
         # 失败时不阻断 profile 更新，避免前端“保存失败但实际已保存”的体验问题。
         email = (payload.email or "").strip() if payload.email is not None else None
-        username = (
-            (payload.username or "").strip() if payload.username is not None else None
-        )
-        if email is not None or username is not None:
+        if email is not None:
             try:
                 service_client = auth_manager.get_client(use_service=True)
                 update_data: Dict[str, Any] = {}
                 if email:
                     update_data["email"] = email
-                if username is not None:
-                    update_data["user_metadata"] = {"username": username}
                 if update_data:
                     service_client.auth.admin.update_user_by_id(user_id, update_data)
             except Exception as sync_err:

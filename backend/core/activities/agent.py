@@ -8,7 +8,7 @@ import requests
 from core.common.log import logger
 
 
-def analyze_article_event(
+def analyze_article_for_activity(
     title: str, content: Optional[str], default_url: Optional[str]
 ) -> Dict[str, Any]:
     api_base = os.getenv(
@@ -20,18 +20,18 @@ def analyze_article_event(
     full_text = f"标题：{title or ''}\n正文: {content or ''}".strip()
 
     logger.debug(
-        "[events.llm] input "
+        "[activities.llm] input "
         f"title_len={len(title or '')}, content_len={len(content or '')}, "
         f"default_url_present={bool(default_url)}"
     )
     logger.info(
-        "[events.llm] setup "
+        "[activities.llm] setup "
         f"api_base={api_base}, model={model}, key_present={bool(api_key)}"
     )
 
     if not api_key:
-        logger.warning("[events.llm] LLM_API_KEY missing, using heuristic fallback")
-        logger.debug(f"[events.llm] heuristic_text_sample={full_text[:200]!r}")
+        logger.warning("[activities.llm] LLM_API_KEY missing, using heuristic fallback")
+        logger.debug(f"[activities.llm] heuristic_text_sample={full_text[:200]!r}")
         is_event = any(
             k in full_text
             for k in [
@@ -48,7 +48,7 @@ def analyze_article_event(
             ]
         )
         if not is_event:
-            logger.info("[events.llm] heuristic says not an event")
+            logger.info("[activities.llm] heuristic says not an activity")
             return {"is_event": False}
         ret = {
             "is_event": True,
@@ -59,7 +59,7 @@ def analyze_article_event(
             "audience": "未知",
             "registration_title": "无",
         }
-        logger.debug(f"[events.llm] heuristic_result={ret}")
+        logger.debug(f"[activities.llm] heuristic_result={ret}")
         return ret
 
     prompt = (
@@ -90,32 +90,32 @@ def analyze_article_event(
     except Exception:
         payload_size = -1
     logger.debug(
-        "[events.llm] request "
+        "[activities.llm] request "
         f"payload_size={payload_size}, prompt_len={len(prompt)}, timeout=30"
     )
 
     try:
         resp = requests.post(api_base, headers=headers, json=payload, timeout=600)
         logger.debug(
-            "[events.llm] response "
+            "[activities.llm] response "
             f"status={resp.status_code}, elapsed={getattr(resp, 'elapsed', None)}"
         )
         resp.raise_for_status()
 
         data = resp.json()
-        logger.debug(f"[events.llm] resp_json_keys={list(data.keys())}")
+        logger.debug(f"[activities.llm] resp_json_keys={list(data.keys())}")
 
         content_text = (data.get("choices", [{}])[0].get("message", {}) or {}).get(
             "content", ""
         )
-        logger.debug(f"[events.llm] raw_content_sample={content_text[:300]!r}")
+        logger.debug(f"[activities.llm] raw_content_sample={content_text[:300]!r}")
 
         m = re.search(r"\{.*\}", content_text, re.S)
         json_str = m.group(0) if m else content_text
-        logger.debug(f"[events.llm] extracted_json_sample={json_str[:300]!r}")
+        logger.debug(f"[activities.llm] extracted_json_sample={json_str[:300]!r}")
 
         result = json.loads(json_str)
-        logger.debug(f"[events.llm] parsed_result_keys={list(result.keys())}")
+        logger.debug(f"[activities.llm] parsed_result_keys={list(result.keys())}")
 
         is_event_raw = result.get("is_event", False)
         if isinstance(is_event_raw, str):
@@ -129,7 +129,7 @@ def analyze_article_event(
         else:
             is_event = bool(is_event_raw)
 
-        logger.info(f"[events.llm] is_event={is_event}")
+        logger.info(f"[activities.llm] is_event={is_event}")
         if not is_event:
             return {"is_event": False}
 
@@ -149,7 +149,7 @@ def analyze_article_event(
             "audience": audience,
             "registration_title": registration_title,
         }
-        logger.debug(f"[events.llm] normalized_result={ret}")
+        logger.debug(f"[activities.llm] normalized_result={ret}")
         return ret
 
     except requests.HTTPError as e:
@@ -158,9 +158,9 @@ def analyze_article_event(
             body = resp.text[:500]
         except Exception:
             pass
-        logger.exception(f"[events.llm] HTTPError: {e}; body_sample={body!r}")
+        logger.exception(f"[activities.llm] HTTPError: {e}; body_sample={body!r}")
     except Exception as e:
-        logger.exception(f"[events.llm] analyze failed: {e}")
+        logger.exception(f"[activities.llm] analyze failed: {e}")
 
     is_event = any(
         k in full_text
@@ -178,7 +178,7 @@ def analyze_article_event(
         ]
     )
     if not is_event:
-        logger.info("[events.llm] fallback says not an event")
+        logger.info("[activities.llm] fallback says not an activity")
         return {"is_event": False}
     ret = {
         "is_event": True,
@@ -189,5 +189,5 @@ def analyze_article_event(
         "audience": "无",
         "registration_title": "无",
     }
-    logger.debug(f"[events.llm] fallback_result={ret}")
+    logger.debug(f"[activities.llm] fallback_result={ret}")
     return ret

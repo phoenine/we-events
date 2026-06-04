@@ -26,12 +26,12 @@ def _load_settings() -> SupabaseSettings:
             expires=int(os.getenv("SUPABASE_QR_SIGN_EXPIRES", "120")),
         ),
         "avatar": BucketConfig(
-            name=os.getenv("SUPABASE_AVATAR_BUCKET", "avatar"),
+            name=os.getenv("SUPABASE_AVATAR_BUCKET", "avatars"),
             path=os.getenv("SUPABASE_AVATAR_PATH", "avatars/{uuid}.png"),
             expires=0,
         ),
         "articles": BucketConfig(
-            name=os.getenv("SUPABASE_ARTICLES_BUCKET", "articles"),
+            name=os.getenv("SUPABASE_ARTICLES_BUCKET", "article-images"),
             path=os.getenv(
                 "SUPABASE_ARTICLE_IMAGE_PATH",
                 "articles/{article_name}/{filename}",
@@ -49,4 +49,3 @@ def _load_settings() -> SupabaseSettings:
 
 
 settings = _load_settings()
-
