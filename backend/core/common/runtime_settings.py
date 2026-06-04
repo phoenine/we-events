@@ -34,9 +34,6 @@ class RuntimeSettings:
             "gather.content_auto_interval": os.getenv(
                 "GATHER_CONTENT_AUTO_INTERVAL", default
             ),
-            "webhook.content_format": settings.webhook_content_format,
-            "avatar.max_bytes": settings.avatar_max_bytes,
-            "local_avatar": settings.local_avatar,
         }
         return fallback_map.get(key, default)
 

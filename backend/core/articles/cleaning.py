@@ -14,13 +14,13 @@ def clean_duplicate_articles():
         if not articles:
             return ("没有找到文章", 0)
 
-        # 用于存储已检查的文章标题和mp_id组合
+        # 用于存储已检查的文章标题和wechat_account_id组合
         seen_articles = set()
         duplicates = []
 
         # 检查重复文章
         for article in articles:
-            article_key = (article["title"], article["mp_id"])
+            article_key = (article["title"], article["wechat_account_id"])
             if article_key in seen_articles:
                 duplicates.append(article)
             else:

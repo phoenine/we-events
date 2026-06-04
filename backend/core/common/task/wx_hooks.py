@@ -6,12 +6,12 @@ from core.integrations.wx.base import WxGatherHooks
 def build_wx_gather_hooks() -> WxGatherHooks:
     """构建 WxGather 的默认 hooks 实现。"""
 
-    def _on_update_mps(mp_id: str, mp: dict) -> None:
+    def _on_update_mps(wechat_account_id: str, mp: dict) -> None:
         """更新公众号同步状态/时间（DB 副作用）。"""
         try:
             from datetime import datetime, timezone
             import time
-            from core.feeds import feed_repo
+            from core.wechat_accounts import wechat_account_repo
 
             current_time = int(time.time())
             update_data = {
@@ -29,7 +29,7 @@ def build_wx_gather_hooks() -> WxGatherHooks:
                 if mp.get("status") is not None:
                     update_data["status"] = mp.get("status")
 
-            feed_repo.sync_update_feed(mp_id, update_data)
+            wechat_account_repo.sync_update_wechat_account(wechat_account_id, update_data)
         except Exception:
             return
 
@@ -54,16 +54,6 @@ def build_wx_gather_hooks() -> WxGatherHooks:
         except Exception:
             pass
 
-        # 3) 发送登录失效通知（best-effort）
-        try:
-            import threading
-            from jobs.failauth import send_wx_code
-
-            threading.Thread(
-                target=send_wx_code,
-                args=("公众号平台登录失效,请重新登录",),
-            ).start()
-        except Exception:
-            logger.error("公众号平台登录失效,请重新登录，且发送通知失败")
+        logger.error("公众号平台登录失效,请重新登录")
 
     return WxGatherHooks(on_update_mps=_on_update_mps, on_error=_on_error)

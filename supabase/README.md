@@ -22,11 +22,6 @@ Create these Supabase Storage buckets:
   - Purpose: WeChat official account QR login images.
   - Access: private.
   - Backend returns signed URLs.
-- `avatars`
-  - Purpose: application user avatars.
-  - Access: private.
-  - Database stores object paths in `profiles.avatar_path`.
-  - Backend returns signed URLs through FastAPI.
 - `article-images`
   - Purpose: images downloaded from collected article HTML.
   - Access: public by current content rendering strategy.
@@ -51,7 +46,7 @@ The project has two separate identities:
 - Application users: log into the product through Supabase Auth.
 - WeChat official-account crawling identity: maintained by admin/system through QR login.
 
-Normal users do not maintain their own WeChat QR login sessions. The system/admin maintains one crawling identity, collects source data, and shares the resulting `feeds`, `articles`, and `activities` data through FastAPI.
+Normal users do not maintain their own WeChat QR login sessions. The system/admin maintains one crawling identity, collects source data, and shares the resulting `wechat_accounts`, `articles`, and `activities` data through FastAPI.
 
 ### User profile model
 
@@ -59,7 +54,6 @@ Supabase Auth stores credentials and email. Business user state lives in `profil
 
 - `username`
 - `nickname`
-- `avatar_path`
 - `role`
 - `status`
 
@@ -93,13 +87,11 @@ Detailed LLM fallback workflow and cost audit design are intentionally deferred.
 Core tables:
 
 - `profiles`
-- `tags`
-- `feeds`
+- `wechat_account_groups`
+- `wechat_accounts`
 - `articles`
 - `article_images`
 - `activities`
-- `message_tasks`
-- `message_task_logs`
 - `config_managements`
 - `wechat_auth_sessions`
 - `wechat_auth_session_secret`
@@ -125,4 +117,3 @@ Secrets must stay in environment variables or secure storage. Do not store these
 - `SUPABASE_SERVICE_KEY`
 - `LLM_API_KEY`
 - WeChat cookies or tokens
-- webhook secrets

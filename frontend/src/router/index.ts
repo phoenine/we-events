@@ -8,8 +8,6 @@ import AddSubscription from '../views/AddSubscription.vue'
 import WeChatMpManagement from '../views/WeChatMpManagement.vue'
 import ConfigList from '../views/ConfigList.vue'
 import ConfigDetail from '../views/ConfigDetail.vue'
-import MessageTaskList from '../views/MessageTaskList.vue'
-import MessageTaskForm from '../views/MessageTaskForm.vue'
 import NovelReader from '../views/NovelReader.vue'
 
 const routes = [
@@ -71,39 +69,11 @@ const routes = [
         },
       },
       {
-        path: 'message-tasks',
-        name: 'MessageTaskList',
-        component: MessageTaskList,
-        meta: {
-          requiresAuth: true,
-          permissions: ['message_task:view'],
-        },
-      },
-      {
         path: 'notification',
         name: 'ActivityManagement',
         component: () => import('@/views/ActivityManagement.vue'),
         meta: {
           requiresAuth: true,
-        },
-      },
-      {
-        path: 'message-tasks/add',
-        name: 'MessageTaskAdd',
-        component: MessageTaskForm,
-        meta: {
-          requiresAuth: true,
-          permissions: ['message_task:edit'],
-        },
-      },
-      {
-        path: 'message-tasks/edit/:id',
-        name: 'MessageTaskEdit',
-        component: MessageTaskForm,
-        props: true,
-        meta: {
-          requiresAuth: true,
-          permissions: ['message_task:edit'],
         },
       },
       {

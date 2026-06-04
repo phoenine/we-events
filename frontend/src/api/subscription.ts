@@ -44,16 +44,16 @@ export const getSubscriptions = (params?: { page?: number; pageSize?: number }) 
     offset: (params?.page ?? 0) * (params?.pageSize ?? 10),
     limit: params?.pageSize ?? 10,
   }
-  return http.get<SubscriptionListResult>('/wx/mps', { params: apiParams })
+  return http.get<SubscriptionListResult>('/wx/wechat-accounts', { params: apiParams })
 }
 
 export const getSubscriptionDetail = (mp_id: string) => {
-  return http.get<{ code: number; data: Subscription }>(`/wx/mps/${mp_id}`)
+  return http.get<{ code: number; data: Subscription }>(`/wx/wechat-accounts/${mp_id}`)
 }
 
 // 添加订阅公众号信息
 export const addSubscription = (data: AddSubscriptionParams) => {
-  return http.post<{ code: number; message: string }>('/wx/mps', data)
+  return http.post<{ code: number; message: string }>('/wx/wechat-accounts', data)
 }
 export const getSubscriptionInfo = (url: string) => {
   return http.post<{ code: number; message: string }>(
@@ -66,7 +66,7 @@ export const getSubscriptionInfo = (url: string) => {
 }
 
 export const deleteSubscription = (mp_id: string) => {
-  return http.delete<{ code: number; message: string }>(`/wx/mps/${mp_id}`)
+  return http.delete<{ code: number; message: string }>(`/wx/wechat-accounts/${mp_id}`)
 }
 
 // 兼容旧命名
@@ -78,14 +78,14 @@ export const UpdateMps = (mp_id: string, params: { start_page?: number; end_page
     start_page: params?.start_page ?? 0,
     end_page: params?.end_page ?? 1,
   }
-  return http.get<{ code: number; message: string }>(`/wx/mps/update/${mp_id || 'all'}`, {
+  return http.get<{ code: number; message: string }>(`/wx/wechat-accounts/update/${mp_id || 'all'}`, {
     params: apiParams,
   })
 }
 
 // 更新订阅公众号信息
 export const updateSubscription = (mp_id: string, data: Partial<Subscription>) => {
-  return http.put<{ code: number; message: string }>(`/wx/mps/${mp_id}`, data)
+  return http.put<{ code: number; message: string }>(`/wx/wechat-accounts/${mp_id}`, data)
 }
 
 export const searchBiz = (kw: string, params: { page?: number; pageSize?: number }) => {
@@ -93,7 +93,7 @@ export const searchBiz = (kw: string, params: { page?: number; pageSize?: number
     offset: (params?.page ?? 0) * (params?.pageSize ?? 10),
     limit: params?.pageSize ?? 10,
   }
-  return http.get<SubscriptionListResult>(`/wx/mps/search/${kw}`, { params: apiParams })
+  return http.get<SubscriptionListResult>(`/wx/wechat-accounts/search/${kw}`, { params: apiParams })
 }
 
 // 搜索公众号（分页）
@@ -103,5 +103,5 @@ export const searchMps = (kw: string, params: { page?: number; pageSize?: number
     offset: (params?.page ?? 0) * (params?.pageSize ?? 10),
     limit: params?.pageSize ?? 10,
   }
-  return http.get<SubscriptionListResult>(`/wx/mps`, { params: apiParams })
+  return http.get<SubscriptionListResult>(`/wx/wechat-accounts`, { params: apiParams })
 }

@@ -18,7 +18,7 @@ async def upsert_activity_from_article(
     activity_data = {
         "title": analysis.get("registration_title", "无"),
         "original_title": article.get("title") or "",
-        "source_feed_id": article.get("mp_id"),
+        "source_wechat_account_id": article.get("wechat_account_id"),
         "registration_time_text": analysis.get("registration_time", "即时"),
         "registration_method": analysis.get(
             "registration_method", article.get("url") or "无"

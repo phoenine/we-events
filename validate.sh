@@ -54,7 +54,11 @@ check_file "backend/apis/activities.py"
 check_file "backend/core/activities/repo.py"
 check_file "backend/core/activities/service.py"
 check_file "backend/core/activities/agent.py"
+check_file "backend/core/wechat_accounts/repo.py"
+check_file "backend/core/wechat_accounts/collector.py"
+check_file "backend/core/wechat_account_groups/repo.py"
 check_file "backend/schemas/activities.py"
+check_file "backend/schemas/wechat_account_groups.py"
 check_file "supabase/migrations/20241120_initial_schema.sql"
 check_file "supabase/migrations/20241120_rls_policies.sql"
 check_file "supabase/config_managements_seed.sql"
@@ -84,6 +88,24 @@ else
   fail "activities table missing from baseline"
 fi
 
+if grep -q "create table if not exists public.wechat_accounts" supabase/migrations/20241120_initial_schema.sql; then
+  ok "wechat_accounts table exists in baseline"
+else
+  fail "wechat_accounts table missing from baseline"
+fi
+
+if grep -q "create table if not exists public.wechat_account_groups" supabase/migrations/20241120_initial_schema.sql; then
+  ok "wechat_account_groups table exists in baseline"
+else
+  fail "wechat_account_groups table missing from baseline"
+fi
+
+if grep -q "public.feeds" supabase/migrations/*.sql; then
+  fail "old public.feeds references still exist"
+else
+  ok "no old public.feeds references"
+fi
+
 if grep -q "wechat_auth_sessions" supabase/migrations/20241120_initial_schema.sql; then
   ok "wechat auth session tables exist in baseline"
 else
@@ -111,10 +133,16 @@ else
   ok "no old events imports/table references"
 fi
 
-if grep -R "is_gathered\|profiles\.avatar_url" backend supabase --exclude-dir=.venv --exclude-dir=__pycache__ >/dev/null 2>&1; then
-  fail "old article/profile fields still referenced in backend or Supabase SQL"
+if [ -d "backend/core/feeds" ] || grep -R "core\.feeds\|FEED_TABLE = \"feeds\"\|TABLE_NAME = \"feeds\"" backend --exclude-dir=.venv --exclude-dir=__pycache__ >/dev/null 2>&1; then
+  fail "old feeds backend module/table references still exist"
 else
-  ok "no old is_gathered/profile avatar_url references"
+  ok "old feeds backend module/table references are removed"
+fi
+
+if grep -R "is_gathered\|profiles\.avatar_url\|avatar_path\|avatar.max_bytes\|supabase_storage_avatar\|public.tags\|articles.mp_id" backend supabase --exclude-dir=.venv --exclude-dir=__pycache__ >/dev/null 2>&1; then
+  fail "old article/profile/group/avatar fields still referenced in backend or Supabase SQL"
+else
+  ok "no old is_gathered/profile avatar/group/mp_id references"
 fi
 
 echo ""

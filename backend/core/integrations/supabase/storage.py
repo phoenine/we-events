@@ -135,5 +135,4 @@ class SupabaseStorage:
 
 
 supabase_storage_qr = SupabaseStorage("qr")
-supabase_storage_avatar = SupabaseStorage("avatar")
 supabase_storage_articles = SupabaseStorage("articles")

@@ -10,12 +10,11 @@ begin
 end $$;
 
 -- Application user profiles. Auth credentials live in auth.users; business
--- role/status/avatar state lives here.
+-- role/status state lives here.
 create table if not exists public.profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   username text,
   nickname text,
-  avatar_path text,
   role text not null default 'user'
     check (role in ('admin','user')),
   status text not null default 'active'
@@ -24,8 +23,8 @@ create table if not exists public.profiles (
   updated_at timestamptz not null default now()
 );
 
--- Feed categories.
-create table if not exists public.tags (
+-- WeChat official account groups.
+create table if not exists public.wechat_account_groups (
   id serial primary key,
   name text not null unique,
   description text,
@@ -36,13 +35,13 @@ create table if not exists public.tags (
 );
 
 -- WeChat official account subscription sources.
-create table if not exists public.feeds (
+create table if not exists public.wechat_accounts (
   id text primary key,
   name text not null,
   description text,
-  avatar_url text,
+  logo_url text,
   faker_id text unique,
-  tag_id integer references public.tags(id) on delete set null,
+  group_id integer references public.wechat_account_groups(id) on delete set null,
   last_publish timestamptz,
   last_fetch timestamptz,
   status integer not null default 1,
@@ -53,7 +52,7 @@ create table if not exists public.feeds (
 -- Collected articles. These are shared system data, not per-user crawl results.
 create table if not exists public.articles (
   id text primary key,
-  mp_id text references public.feeds(id) on delete cascade,
+  wechat_account_id text references public.wechat_accounts(id) on delete cascade,
   title text not null,
   description text,
   pic_url text,
@@ -88,7 +87,7 @@ create table if not exists public.article_images (
 create table if not exists public.activities (
   id uuid primary key default gen_random_uuid(),
   article_id text not null references public.articles(id) on delete cascade,
-  source_feed_id text references public.feeds(id) on delete set null,
+  source_wechat_account_id text references public.wechat_accounts(id) on delete set null,
   title text not null default '',
   original_title text not null default '',
   article_url text not null default '',
@@ -110,29 +109,6 @@ create table if not exists public.activities (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (article_id)
-);
-
--- Scheduled delivery/webhook tasks.
-create table if not exists public.message_tasks (
-  id uuid primary key default gen_random_uuid(),
-  message_template text not null default '',
-  web_hook_url text not null default '',
-  mps_id text not null default '',
-  name text not null default '',
-  message_type integer not null default 0,
-  cron_exp text not null default '',
-  status integer not null default 0,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists public.message_task_logs (
-  id bigserial primary key,
-  task_id uuid references public.message_tasks(id) on delete cascade,
-  status text,
-  message text,
-  article_count integer not null default 0,
-  created_at timestamptz not null default now()
 );
 
 -- Runtime configuration. Secrets should stay in environment variables.
@@ -169,19 +145,17 @@ create table if not exists public.wechat_auth_session_secret (
 -- Indexes.
 create index if not exists idx_profiles_role on public.profiles(role);
 create index if not exists idx_profiles_status on public.profiles(status);
-create index if not exists idx_articles_mp_id_publish_time on public.articles(mp_id, publish_time desc);
+create index if not exists idx_articles_wechat_account_id_publish_time on public.articles(wechat_account_id, publish_time desc);
 create index if not exists idx_articles_publish_time on public.articles(publish_time desc);
 create index if not exists idx_articles_content_fetch_status on public.articles(content_fetch_status);
 create index if not exists idx_articles_activity_extraction_status on public.articles(activity_extraction_status);
-create index if not exists idx_feeds_status on public.feeds(status);
-create index if not exists idx_feeds_tag_id on public.feeds(tag_id);
+create index if not exists idx_wechat_accounts_status on public.wechat_accounts(status);
+create index if not exists idx_wechat_accounts_group_id on public.wechat_accounts(group_id);
 create index if not exists idx_activities_article_id on public.activities(article_id);
-create index if not exists idx_activities_source_feed_id on public.activities(source_feed_id);
+create index if not exists idx_activities_source_wechat_account_id on public.activities(source_wechat_account_id);
 create index if not exists idx_activities_status on public.activities(status);
 create index if not exists idx_activities_extraction_status on public.activities(extraction_status);
 create index if not exists idx_activities_created_at on public.activities(created_at desc);
-create index if not exists idx_message_tasks_status on public.message_tasks(status);
-create index if not exists idx_message_task_logs_task_id on public.message_task_logs(task_id);
 create index if not exists idx_config_managements_key on public.config_managements(config_key);
 create index if not exists idx_config_managements_updated_at on public.config_managements(updated_at desc);
 create index if not exists idx_wechat_auth_sessions_maintained_by on public.wechat_auth_sessions(maintained_by);
@@ -195,12 +169,12 @@ drop trigger if exists trg_profiles_updated on public.profiles;
 create trigger trg_profiles_updated before update on public.profiles
 for each row execute function public.set_updated_at();
 
-drop trigger if exists trg_tags_updated on public.tags;
-create trigger trg_tags_updated before update on public.tags
+drop trigger if exists trg_wechat_account_groups_updated on public.wechat_account_groups;
+create trigger trg_wechat_account_groups_updated before update on public.wechat_account_groups
 for each row execute function public.set_updated_at();
 
-drop trigger if exists trg_feeds_updated on public.feeds;
-create trigger trg_feeds_updated before update on public.feeds
+drop trigger if exists trg_wechat_accounts_updated on public.wechat_accounts;
+create trigger trg_wechat_accounts_updated before update on public.wechat_accounts
 for each row execute function public.set_updated_at();
 
 drop trigger if exists trg_articles_updated on public.articles;
@@ -209,10 +183,6 @@ for each row execute function public.set_updated_at();
 
 drop trigger if exists trg_activities_updated on public.activities;
 create trigger trg_activities_updated before update on public.activities
-for each row execute function public.set_updated_at();
-
-drop trigger if exists trg_message_tasks_updated on public.message_tasks;
-create trigger trg_message_tasks_updated before update on public.message_tasks
 for each row execute function public.set_updated_at();
 
 drop trigger if exists trg_config_managements_updated on public.config_managements;

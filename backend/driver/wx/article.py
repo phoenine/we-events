@@ -176,7 +176,7 @@ class WXArticleFetcher:
             # 注入失败属于可接受降级
             return
 
-    def FixArticle(self, urls: list | None = None, mp_id: str = "") -> bool:
+    def FixArticle(self, urls: list | None = None, wechat_account_id: str = "") -> bool:
         """批量修复文章内容"""
         try:
             from jobs.article import UpdateArticle
@@ -200,8 +200,8 @@ class WXArticleFetcher:
                     article = {
                         "id": article_data.get("id"),
                         "title": article_data.get("title"),
-                        # 若显式传入 mp_id，则覆盖；否则使用抓取结果中的 mp_id
-                        "mp_id": mp_id or article_data.get("mp_id"),
+                        # 若显式传入 wechat_account_id，则覆盖；否则使用抓取结果中的 wechat_account_id
+                        "wechat_account_id": wechat_account_id or article_data.get("wechat_account_id"),
                         "publish_time": article_data.get("publish_time"),
                         "pic_url": article_data.get("pic_url"),
                         "content": article_data.get("content"),
@@ -429,7 +429,7 @@ class WXArticleFetcher:
             # 等待关键元素加载
             # 使用更精确的选择器避免匹配多个元素
             ele_logo = page.locator("#js_like_profile_bar .wx_follow_avatar img")
-            # 获取<img>标签的src属性
+            # 获取<img>公众号分组的src属性
             logo_src = ele_logo.get_attribute("src")
 
             # 获取公众号名称（避免依赖 jQuery）
@@ -448,14 +448,14 @@ class WXArticleFetcher:
                 logo=logo_src,
                 biz=biz or self.extract_biz_from_source(url, page),
             )
-            # mp_id 以 biz 的解码值派生（失败则留空）
+            # wechat_account_id 以 biz 的解码值派生（失败则留空）
             try:
                 if info["mp_info"].get("biz"):
-                    info["mp_id"] = "MP_WXS_" + base64.b64decode(
+                    info["wechat_account_id"] = "MP_WXS_" + base64.b64decode(
                         info["mp_info"]["biz"]
                     ).decode("utf-8")
             except Exception:
-                info["mp_id"] = info.get("mp_id") or ""
+                info["wechat_account_id"] = info.get("wechat_account_id") or ""
 
             return info
         finally:

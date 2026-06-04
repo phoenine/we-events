@@ -1,14 +1,9 @@
-import os
-import re
 from typing import Dict, Any
-from uuid import uuid4
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from schemas import success_response, error_response
 from core.integrations.supabase.auth import get_current_user, auth_manager
 from core.profiles import profile_repo
-from core.integrations.supabase.storage import supabase_storage_avatar
-from core.common.runtime_settings import runtime_settings
 from core.common.log import logger
 
 
@@ -19,62 +14,12 @@ class UpdateUserRequest(BaseModel):
     username: str | None = Field(default=None, max_length=100)
     nickname: str | None = Field(default=None, max_length=100)
     email: str | None = Field(default=None, max_length=255)
-    avatar: str | None = Field(default=None, max_length=1000)
     is_active: bool | None = None
 
 
 class ChangePasswordRequest(BaseModel):
     old_password: str = Field(..., min_length=1, max_length=256)
     new_password: str = Field(..., min_length=8, max_length=256)
-
-
-def _extract_avatar_object_path(value: str) -> str:
-    """
-    从数据库中保存的头像值解析对象路径。
-    兼容三种格式：
-    1) 纯对象路径（avatar/xx.png 或 avatars/xx.png）
-    2) public URL（.../storage/v1/object/public/{bucket}/{path}）
-    3) signed URL（.../storage/v1/object/sign/{bucket}/{path}?token=...）
-    """
-    raw = (value or "").strip()
-    if not raw:
-        return ""
-
-    if raw.startswith("http://") or raw.startswith("https://"):
-        public_prefix = f"/storage/v1/object/public/{supabase_storage_avatar.bucket}/"
-        sign_prefix = f"/storage/v1/object/sign/{supabase_storage_avatar.bucket}/"
-        if public_prefix in raw:
-            return raw.split(public_prefix, 1)[1].split("?", 1)[0]
-        if sign_prefix in raw:
-            return raw.split(sign_prefix, 1)[1].split("?", 1)[0]
-    return raw
-
-
-async def _resolve_avatar_url(value: str) -> str:
-    raw = (value or "").strip()
-    if not raw:
-        return ""
-    obj_path = _extract_avatar_object_path(raw)
-    if not obj_path:
-        return raw
-
-    # 优先返回 signed URL，兼容私有 bucket；失败再回退 public URL。
-    try:
-        return await supabase_storage_avatar.sign_url(obj_path, expires=7 * 24 * 3600)
-    except Exception:
-        return supabase_storage_avatar.public_url(obj_path)
-
-
-def _render_storage_path(template: str, values: dict[str, str]) -> str:
-    """渲染 storage 路径模板，避免因占位符不一致导致 KeyError。"""
-
-    def replace(match: re.Match[str]) -> str:
-        key = match.group(1)
-        if key in values:
-            return str(values[key])
-        return str(values.get("uuid", uuid4().hex))
-
-    return re.sub(r"\{([a-zA-Z0-9_]+)\}", replace, template)
 
 
 @router.get("", summary="获取当前用户资料")
@@ -105,7 +50,6 @@ async def get_user_info(current_user: Dict[str, Any] = Depends(get_current_user)
                 "nickname": profile.get("nickname")
                 or username
                 or email,
-                "avatar": await _resolve_avatar_url(profile.get("avatar_path") or ""),
                 "role": profile.get("role") or "user",
                 "is_active": status_value == "active",
             }
@@ -116,72 +60,6 @@ async def get_user_info(current_user: Dict[str, Any] = Depends(get_current_user)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=50001, message=f"获取用户信息失败: {str(e)}"),
-        )
-
-
-@router.post("/avatar", summary="上传用户头像")
-async def upload_avatar(
-    file: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user),
-):
-    """处理用户头像上传"""
-    try:
-        allowed_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-        if file.content_type not in allowed_types:
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=error_response(code=41501, message="不支持的头像类型"),
-            )
-
-        # 默认限制 5MB，可通过配置 avatar.max_bytes 覆盖
-        max_bytes = await runtime_settings.get_int("avatar.max_bytes", 5 * 1024 * 1024)
-        file_bytes = bytearray()
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            file_bytes.extend(chunk)
-            if len(file_bytes) > max_bytes:
-                raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail=error_response(code=41301, message="头像文件过大"),
-                )
-        _, ext = os.path.splitext(file.filename or "")
-        if not ext:
-            ext = ".jpg"
-        user_id = str(current_user.get("id") or "")
-        username = str(current_user.get("username") or user_id or "user")
-        object_path = _render_storage_path(
-            supabase_storage_avatar.path,
-            {
-                "uuid": str(uuid4()),
-                "user_id": user_id,
-                "username": username,
-                "filename": file.filename or f"{username}{ext}",
-            },
-        )
-
-        _ = await supabase_storage_avatar.upload_bytes(
-            data=bytes(file_bytes),
-            path=object_path,
-            content_type=file.content_type or "image/jpeg",
-        )
-
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=error_response(code=40101, message="未登录或会话已失效"),
-            )
-
-        # 存储对象路径，避免把不稳定的 URL（域名/公网策略）固化到数据库
-        await profile_repo.update_avatar(user_id, object_path)
-        return success_response(data={"avatar": await _resolve_avatar_url(object_path)})
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_406_NOT_ACCEPTABLE,
-            detail=f"头像上传失败: {str(e)}",
         )
 
 
@@ -203,8 +81,6 @@ async def update_user_info(
             profile_patch["username"] = payload.username.strip()
         if payload.nickname is not None:
             profile_patch["nickname"] = payload.nickname.strip()
-        if payload.avatar is not None:
-            profile_patch["avatar_path"] = _extract_avatar_object_path(payload.avatar)
         if payload.is_active is not None:
             profile_patch["status"] = "active" if payload.is_active else "disabled"
         if profile_patch:
@@ -277,7 +153,7 @@ async def change_password(
 # @router.post("/upload", summary="上传文件")
 # async def upload_file(
 #     file: UploadFile = File(...),
-#     type: str = "tags",
+#     type: str = "wechat_account_groups",
 #     current_user: dict = Depends(get_current_user),
 # ):
 #     """处理用户文件上传"""

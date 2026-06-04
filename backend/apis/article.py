@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status as fast_status, Query, Body
 from core.integrations.supabase.auth import get_current_user
 from core.articles import article_repo
-from core.feeds import feed_repo
+from core.wechat_accounts import wechat_account_repo
 from core.integrations.supabase.storage import supabase_storage_articles
 from schemas import success_response, error_response, format_search_kw
 from core.common.log import logger
@@ -91,14 +91,14 @@ async def _safe_delete_article_image_mappings(article_ids: List[str]) -> None:
 
 @router.get("", summary="获取文章列表")
 async def get_articles(
-    mp_id: Optional[str] = Query(None),
+    wechat_account_id: Optional[str] = Query(None),
     offset: int = Query(0, ge=0),
     limit: int = Query(5, ge=1, le=100),
     _current_user: dict = Depends(get_current_user),
 ):
     try:
         articles_raw = await article_repo.get_articles(
-            mp_id=mp_id,
+            wechat_account_id=wechat_account_id,
             limit=limit,
             offset=offset,
             order_by="publish_time.desc",
@@ -107,25 +107,25 @@ async def get_articles(
         articles: List[Dict[str, Any]] = cast(List[Dict[str, Any]], articles_raw)
 
         total = await article_repo.count_articles(
-            mp_id=mp_id,
+            wechat_account_id=wechat_account_id,
         )
 
-        # 获取相关的feed信息
-        mp_ids = {article.get("mp_id") for article in articles}
+        # 获取相关公众号账号信息
+        wechat_account_ids = {article.get("wechat_account_id") for article in articles}
         mp_names = {}
 
-        if mp_ids:
-            feeds_raw = await feed_repo.get_feeds()
-            feeds: List[Dict[str, Any]] = cast(List[Dict[str, Any]], feeds_raw)
-            for feed in feeds:
-                if feed["id"] in mp_ids:
-                    mp_names[feed["id"]] = feed["name"]
+        if wechat_account_ids:
+            accounts_raw = await wechat_account_repo.get_wechat_accounts()
+            accounts: List[Dict[str, Any]] = cast(List[Dict[str, Any]], accounts_raw)
+            for account in accounts:
+                if account["id"] in wechat_account_ids:
+                    mp_names[account["id"]] = account["name"]
 
         # 合并公众号名称到文章列表
         article_list = []
         for article in articles:
             article_dict = article.copy()
-            article_dict["mp_name"] = mp_names.get(article.get("mp_id"), "未知公众号")
+            article_dict["mp_name"] = mp_names.get(article.get("wechat_account_id"), "未知公众号")
             article_list.append(article_dict)
 
         return success_response({"list": article_list, "total": total})
@@ -183,7 +183,7 @@ async def get_next_article(
         current_article = current_article_rows[0]
         # 获取同一公众号的文章
         articles_raw = await article_repo.get_articles(
-            mp_id=current_article["mp_id"], order_by="publish_time.desc"
+            wechat_account_id=current_article["wechat_account_id"], order_by="publish_time.desc"
         )
         articles: List[Dict[str, Any]] = cast(List[Dict[str, Any]], articles_raw)
 
@@ -233,7 +233,7 @@ async def get_prev_article(
 
         # 获取同一公众号的文章
         articles_raw = await article_repo.get_articles(
-            mp_id=current_article["mp_id"], order_by="publish_time.desc"
+            wechat_account_id=current_article["wechat_account_id"], order_by="publish_time.desc"
         )
         articles: List[Dict[str, Any]] = cast(List[Dict[str, Any]], articles_raw)
 
@@ -295,13 +295,13 @@ async def clean_expired_articles(_current_user: dict = Depends(get_current_user)
         )
 
 
-@router.delete("/clean", summary="清理无效文章(MP_ID不存在于Feeds表中的文章)")
+@router.delete("/clean", summary="清理无效文章(MP_ID不存在于wechat_accounts表中的文章)")
 async def clean_orphan_articles(_current_user: dict = Depends(get_current_user)):
     try:
-        # 获取所有有效的feed ID
-        feeds_raw = await feed_repo.get_feeds()
-        feeds: List[Dict[str, Any]] = cast(List[Dict[str, Any]], feeds_raw)
-        valid_feed_ids = {feed["id"] for feed in feeds}
+        # 获取所有有效的公众号账号 ID
+        accounts_raw = await wechat_account_repo.get_wechat_accounts()
+        accounts: List[Dict[str, Any]] = cast(List[Dict[str, Any]], accounts_raw)
+        valid_account_ids = {account["id"] for account in accounts}
 
         # 获取所有文章
         articles_raw = await article_repo.get_articles()
@@ -310,7 +310,7 @@ async def clean_orphan_articles(_current_user: dict = Depends(get_current_user))
         deleted_count = 0
         storage_deleted_count = 0
         for article in articles:
-            if article["mp_id"] not in valid_feed_ids:
+            if article["wechat_account_id"] not in valid_account_ids:
                 storage_deleted_count += await _delete_article_storage_objects(article)
                 await article_repo.delete_article(article["id"])
                 await _safe_delete_article_image_mapping(str(article["id"]))

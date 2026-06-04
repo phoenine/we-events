@@ -5,7 +5,7 @@ from datetime import datetime
 
 class ArticleBase(BaseModel):
     id: str
-    mp_id: Optional[str] = None
+    wechat_account_id: Optional[str] = None
     title: Optional[str] = None
     pic_url: Optional[str] = None
     url: Optional[str] = None

@@ -4,31 +4,16 @@ server:
   name: ${SERVER_NAME:-wx-harvester}
   #前端显示名称
   web_name: ${WEB_NAME:-WxHarvester微信公众号采集助手}
-  #过期是否发送授权二维通知 默认True
-  send_code: ${SEND_CODE:-True}
-  #二维通知标题
-  code_title: ${CODE_TITLE:-WxHarvester}
   #启动JOB定时任务，默认为True
   enable_job: ${ENABLE_JOB:-True}
   #代码修改自动重启服务，默认为False
   auto_reload: ${AUTO_RELOAD:-False}
   #最大线程数 默认2个线程，不建议超过4个线程
   threads: ${THREADS:-4}
-#通知
-notice:
-  #通知方式，可选dingding、wechat、feishu、custom
-  dingding: "${DINGDING_WEBHOOK}"
-  wechat: "${WECHAT_WEBHOOK}"
-  feishu: "${FEISHU_WEBHOOK}"
-  custom: "${CUSTOM_WEBHOOK}"
 user_agent: ${USER_AGENT:-Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36/WeRss}
 
 #定时任务执行每篇稿件间隔时间 单位秒 默认10s 允许值 1-60秒之间
 interval: ${SPAN_INTERVAL:- 10}
-
-webhook:
-  #文章内容的发送格式(默认使用html格式，可选text、markdown)
-  content_format: ${WEBHOOK_CONTENT_FORMAT:-html}
 
 #API服务端口
 port: ${PORT:-8001}
@@ -52,13 +37,6 @@ article:
   #是否真实删除文章，默认False，如果为True，则会删除数据库中的记录
   true_delete: ${ARTICLE_TRUE_DELETE:-False}
 
-#是否将公众号头像下载到本地（默认关闭，直接使用远程URL）
-local_avatar: ${LOCAL_AVATAR:-False}
-
-avatar:
-  #头像上传大小限制（字节）
-  max_bytes: ${AVATAR_MAX_BYTES:-5242880}
-
 gather:
   #是否采集内容  默认True
   content: ${GATHER_CONTENT:-True}
@@ -73,7 +51,7 @@ gather:
 #安全配置
 safe:
   # 需要隐藏的配置信息，用逗号分隔
-  hide_config: "${SAFE_HIDE_CONFIG:-token,notice.wechat,notice.feishu,notice.dingding}"
+  hide_config: "${SAFE_HIDE_CONFIG:-token}"
   # 授权加密KEY
   lic_key: "${SAFE_LIC_KEY:-PHOENINE-SECURE-LIC-KEY-1234567890}"
 log:

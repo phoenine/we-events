@@ -68,7 +68,7 @@ class MpsWeb(WxGather):
             # 移除 style，避免隐藏
             js_content_div.attrs.pop("style", None)
 
-            # 处理正文内图片标签：data-src → src，并统一宽度
+            # 处理正文内图片公众号分组：data-src → src，并统一宽度
             img_tags = js_content_div.find_all("img")
             for img_tag in img_tags:
                 if "data-src" in img_tag.attrs:
@@ -100,7 +100,7 @@ class MpsWeb(WxGather):
         """分页拉取公众号发布列表（/cgi-bin/appmsgpublish），可选抓取正文。"""
 
         # 初始化会话上下文（cookie/UA/headers/session），不在此处派生 token
-        self.Start(mp_id=Mps_id)
+        self.Start(wechat_account_id=Mps_id)
 
         # 允许通过父类开关覆盖
         if getattr(self, "Gather_Content", False):
@@ -215,7 +215,7 @@ class MpsWeb(WxGather):
                                 item["content"] = ""
 
                             item["id"] = item.get("aid")
-                            item["mp_id"] = Mps_id
+                            item["wechat_account_id"] = Mps_id
 
                             if CallBack is not None:
                                 super().FillBack(
@@ -223,7 +223,7 @@ class MpsWeb(WxGather):
                                     data=item,
                                     Ext_Data={
                                         "mp_title": Mps_title,
-                                        "mp_id": Mps_id,
+                                        "wechat_account_id": Mps_id,
                                     },
                                 )
                                 page_processed += 1
@@ -231,7 +231,7 @@ class MpsWeb(WxGather):
                             continue
 
                 logger.info(
-                    f"[dedup-debug] mode=web mp_id={Mps_id} page={i} "
+                    f"[dedup-debug] mode=web wechat_account_id={Mps_id} page={i} "
                     f"candidates={page_candidates} skip_existing={page_skip_existing} "
                     f"processed={page_processed} gather_content={Gather_Content}"
                 )
@@ -245,7 +245,7 @@ class MpsWeb(WxGather):
                 return
             finally:
                 super().Item_Over(
-                    item={"mps_id": Mps_id, "mps_title": Mps_title},
+                    item={"wechat_account_id": Mps_id, "wechat_account_name": Mps_title},
                     CallBack=Item_Over_CallBack,
                 )
 

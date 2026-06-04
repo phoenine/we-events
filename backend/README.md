@@ -9,8 +9,7 @@
 - 公众号检索、订阅管理、文章采集
 - 文章内容清洗、图片入库与活动抽取
 - 登录授权（二维码登录状态管理）
-- 消息任务（定时采集 + Webhook 通知）
-- 标签、活动、配置管理等后台接口
+- 公众号分组、活动、配置管理等后台接口
 
 ## 2. 技术栈
 
@@ -27,12 +26,11 @@
 backend/
 ├── apis/                     # HTTP API 路由层
 ├── core/                     # 领域逻辑与基础能力
-│   ├── integrations/         # Supabase/Wx/通知等基础设施适配
+│   ├── integrations/         # Supabase/Wx 等基础设施适配
 │   ├── common/               # 配置、日志、任务队列等通用组件
-│   ├── articles|feeds|...    # 各业务领域仓储与模型
+│   ├── articles|wechat_accounts|... # 各业务领域仓储与模型
 ├── driver/                   # 浏览器与会话驱动层（Playwright/Wx）
 ├── jobs/                     # 定时任务与异步任务编排
-├── devtools/                 # 本地调试/辅助开发脚本
 ├── main.py                   # 进程启动入口
 ├── web.py                    # FastAPI 应用入口
 └── .env                      # 运行环境变量配置
@@ -109,12 +107,11 @@ python main.py -job True -init True
 ## 7. 核心接口分组
 
 - `auth`：认证与二维码授权
-- `user`：用户资料与头像
-- `wechat-accounts`：公众号管理与采集触发（兼容旧路径 `mps`）
+- `user`：用户资料
+- `wechat-accounts`：公众号管理与采集触发
 - `article`：文章查询与清理
-- `message_tasks`：消息任务管理
 - `configs`：配置管理
-- `tags`：标签管理
+- `wechat-account-groups`：公众号分组管理
 - `activities`：活动管理
 - `sys`：系统信息
 
@@ -141,7 +138,7 @@ rg "APIRouter\\(|@router" apis
 ## 10. 注意事项
 
 - Playwright 与会话状态对抓取流程影响较大，建议在稳定网络和固定环境下运行。
-- 生产环境请显式配置 CORS 白名单、Supabase 凭据与通知 Webhook。
+- 生产环境请显式配置 CORS 白名单与 Supabase 凭据。
 - 前端只通过 FastAPI 访问业务数据；Supabase 表访问由后端 service role 统一管理。
 - 公众号扫码登录态是系统/admin 维护的采集凭据，不按普通用户分别维护。
-- 文章图片 bucket 为 `article-images`，用户头像 bucket 为 `avatars`，二维码 bucket 为 `qr`。
+- 文章图片 bucket 为 `article-images`，二维码 bucket 为 `qr`。

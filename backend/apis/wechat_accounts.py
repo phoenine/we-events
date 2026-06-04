@@ -9,44 +9,37 @@ from fastapi import (
     status,
     Query,
     Body,
-    UploadFile,
-    File,
 )
-from fastapi.responses import FileResponse
-from fastapi.background import BackgroundTasks
 from core.integrations.supabase.auth import get_current_user
-from core.feeds import feed_repo
-from core.feeds.collector import collect_feed_articles
+from core.wechat_accounts import wechat_account_repo
+from core.wechat_accounts.collector import collect_wechat_account_articles
 from core.integrations.wx import search_Biz
 from schemas import success_response, error_response
 from core.common.log import logger
 from core.common.runtime_settings import runtime_settings
-from core.common.res import save_avatar_locally
 from jobs.article import UpdateArticle
 
 
 router = APIRouter(prefix="/wechat-accounts", tags=["公众号管理"])
-legacy_router = APIRouter(prefix="/mps", tags=["公众号管理"], include_in_schema=False)
 
 
-def _feed_to_api(feed: Dict[str, Any]) -> Dict[str, Any]:
-    """将 feeds 表真实字段映射为前端 API 字段。"""
+def _wechat_account_to_api(account: Dict[str, Any]) -> Dict[str, Any]:
+    """将 wechat_accounts 表真实字段映射为前端 API 字段。"""
     return {
-        "id": feed.get("id"),
-        "mp_name": feed.get("mp_name") or feed.get("name"),
-        "mp_cover": feed.get("mp_cover") or feed.get("cover") or feed.get("avatar_url"),
-        "mp_intro": feed.get("mp_intro") or feed.get("description"),
-        "status": feed.get("status"),
-        "created_at": feed.get("created_at"),
-        "faker_id": feed.get("faker_id"),
-        # 兼容旧前端字段，底层映射到现有 feeds 列
-        "update_time": feed.get("update_time") or feed.get("last_fetch"),
-        "sync_time": feed.get("sync_time") or feed.get("last_fetch"),
+        "id": account.get("id"),
+        "mp_name": account.get("mp_name") or account.get("name"),
+        "mp_cover": account.get("mp_cover") or account.get("cover") or account.get("logo_url"),
+        "mp_intro": account.get("mp_intro") or account.get("description"),
+        "status": account.get("status"),
+        "created_at": account.get("created_at"),
+        "faker_id": account.get("faker_id"),
+        # 兼容旧前端字段，底层映射到现有 wechat_accounts 列
+        "update_time": account.get("update_time") or account.get("last_fetch"),
+        "sync_time": account.get("sync_time") or account.get("last_fetch"),
     }
 
 
 @router.get("/search/{kw}", summary="搜索公众号")
-@legacy_router.get("/search/{kw}", summary="搜索公众号")
 async def search_mp(
     kw: str = "",
     limit: int = 10,
@@ -73,7 +66,6 @@ async def search_mp(
 
 
 @router.get("", summary="获取公众号列表")
-@legacy_router.get("", summary="获取公众号列表")
 async def list_wechat_accounts(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -86,19 +78,19 @@ async def list_wechat_accounts(
             filters["name"] = {"ilike": f"%{kw}%"}
 
         # 获取总数
-        total = await feed_repo.count_feeds(filters=filters)
+        total = await wechat_account_repo.count_wechat_accounts(filters=filters)
 
         # 获取分页数据
-        feeds_raw = await feed_repo.get_feeds(
+        accounts_raw = await wechat_account_repo.get_wechat_accounts(
             filters=filters, limit=limit, offset=offset, order_by="created_at"
         )
-        feeds: List[Dict[str, Any]] = cast(List[Dict[str, Any]], feeds_raw)
+        accounts: List[Dict[str, Any]] = cast(List[Dict[str, Any]], accounts_raw)
 
         return success_response(
             {
                 "list": [
-                    _feed_to_api(feed)
-                    for feed in feeds
+                    _wechat_account_to_api(account)
+                    for account in accounts
                 ],
                 "page": {"limit": limit, "offset": offset, "total": total},
                 "total": total,
@@ -112,17 +104,16 @@ async def list_wechat_accounts(
         )
 
 
-@router.get("/update/{mp_id}", summary="更新公众号文章")
-@legacy_router.get("/update/{mp_id}", summary="更新公众号文章")
+@router.get("/update/{wechat_account_id}", summary="更新公众号文章")
 async def sync_wechat_account_articles(
-    mp_id: str,
+    wechat_account_id: str,
     start_page: int = 0,
     end_page: int = 1,
     _current_user: dict = Depends(get_current_user),
 ):
     try:
         # 获取公众号信息
-        mp_raw = await feed_repo.get_feed_by_id(mp_id)
+        mp_raw = await wechat_account_repo.get_wechat_account_by_id(wechat_account_id)
         mp: Dict[str, Any] = cast(Dict[str, Any], mp_raw)
         if not mp:
             raise HTTPException(
@@ -157,7 +148,7 @@ async def sync_wechat_account_articles(
             )
         def UpArt(mp_data):
             try:
-                collect_feed_articles(
+                collect_wechat_account_articles(
                     mp_data,
                     on_article=UpdateArticle,
                     start_page=start_page,
@@ -183,24 +174,23 @@ async def sync_wechat_account_articles(
         )
 
 
-@router.get("/{mp_id}", summary="获取公众号详情")
-@legacy_router.get("/{mp_id}", summary="获取公众号详情")
+@router.get("/{wechat_account_id}", summary="获取公众号详情")
 async def get_mp(
-    mp_id: str,
+    wechat_account_id: str,
 ):
     try:
         # 兼容两种入参：
         # 1) 系统内主键 id（如 MP_WXS_xxx）
         # 2) 微信 fakeid（如 MzI3NDQ0MTI2OQ==）
-        mp = await feed_repo.get_feed_by_id(mp_id)
+        mp = await wechat_account_repo.get_wechat_account_by_id(wechat_account_id)
         if not mp:
-            mp = await feed_repo.get_feed_by_faker_id(mp_id)
+            mp = await wechat_account_repo.get_wechat_account_by_faker_id(wechat_account_id)
         if not mp:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=error_response(code=40401, message="公众号不存在"),
             )
-        return success_response(_feed_to_api(mp))
+        return success_response(_wechat_account_to_api(mp))
     except HTTPException:
         raise
     except Exception as e:
@@ -212,7 +202,6 @@ async def get_mp(
 
 
 @router.post("/by_article", summary="通过文章链接获取公众号详情")
-@legacy_router.post("/by_article", summary="通过文章链接获取公众号详情")
 async def get_mp_by_article(
     url: str = Query(..., min_length=1), _current_user: dict = Depends(get_current_user)
 ):
@@ -300,11 +289,10 @@ async def get_mp_by_article(
 
 
 @router.post("", summary="添加公众号")
-@legacy_router.post("", summary="添加公众号")
 async def create_wechat_account(
     mp_name: str = Body(..., min_length=1, max_length=255),
     mp_cover: str = Body(None, max_length=255),
-    mp_id: str = Body(None, max_length=255),
+    wechat_account_id: str = Body(None, max_length=255),
     avatar: str = Body(None, max_length=500),
     mp_intro: str = Body(None, max_length=255),
     _current_user: dict = Depends(get_current_user),
@@ -312,34 +300,30 @@ async def create_wechat_account(
     try:
         import base64
 
-        if not mp_id:
+        if not wechat_account_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=error_response(code=40001, message="缺少公众号ID"),
             )
 
         try:
-            mpx_id = base64.b64decode(mp_id).decode("utf-8")
+            mpx_id = base64.b64decode(wechat_account_id).decode("utf-8")
         except Exception:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=error_response(code=40002, message="无效的公众号ID"),
             )
 
-        cover_path: Optional[str] = None
-        if avatar:
-            cover_path = save_avatar_locally(avatar)
-        elif mp_cover:
-            cover_path = mp_cover
+        cover_path: Optional[str] = avatar or mp_cover
 
         now = datetime.now(timezone.utc)
         now_iso = now.isoformat()
 
-        # 检查公众号是否已存在（按 faker_id / mp_id）
-        existing_feed_raw = await feed_repo.get_feed_by_faker_id(mp_id)
-        existing_feed: Dict[str, Any] = cast(Dict[str, Any], existing_feed_raw)
+        # 检查公众号是否已存在（按 faker_id / wechat_account_id）
+        existing_account_raw = await wechat_account_repo.get_wechat_account_by_faker_id(wechat_account_id)
+        existing_account: Dict[str, Any] = cast(Dict[str, Any], existing_account_raw)
 
-        if existing_feed:
+        if existing_account:
             # 更新现有记录
             update_data: Dict[str, Any] = {
                 "name": mp_name,
@@ -347,38 +331,38 @@ async def create_wechat_account(
                 "updated_at": now_iso,
             }
             if cover_path:
-                update_data["avatar_url"] = cover_path
+                update_data["logo_url"] = cover_path
 
-            await feed_repo.update_feed(existing_feed["id"], update_data)
-            feed = {**existing_feed, **update_data}
+            await wechat_account_repo.update_wechat_account(existing_account["id"], update_data)
+            account = {**existing_account, **update_data}
         else:
-            # 创建新的Feed记录
-            feed_data: Dict[str, Any] = {
+            # 创建新的公众号账号记录
+            account_data: Dict[str, Any] = {
                 "id": f"MP_WXS_{mpx_id}",
                 "name": mp_name,
-                "avatar_url": cover_path,
+                "logo_url": cover_path,
                 "description": mp_intro,
                 "status": 1,  # 默认启用状态
                 "created_at": now_iso,
                 "updated_at": now_iso,
-                "faker_id": mp_id,
+                "faker_id": wechat_account_id,
             }
-            feed = await feed_repo.create_feed(feed_data)
+            account = await wechat_account_repo.create_wechat_account(account_data)
 
         # 订阅添加只保存公众号信息，不自动触发采集。
         # 文章抓取改为由用户手动点击“刷新”触发，以降低微信风控概率。
         # 在这里实现第一次添加时获取公众号文章
-        # if not existing_feed:
+        # if not existing_account:
         #     max_page = await runtime_settings.get_int("max_page", 2)
         #     TaskQueue.add_task(
-        #         collect_feed_articles,
-        #         feed,
+        #         collect_wechat_account_articles,
+        #         account,
         #         on_article=UpdateArticle,
         #         max_page=max_page,
         #     )
 
         return success_response(
-            _feed_to_api({**feed, "faker_id": feed.get("faker_id", mp_id)})
+            _wechat_account_to_api({**account, "faker_id": account.get("faker_id", wechat_account_id)})
         )
     except HTTPException:
         # 直接透传上面主动抛出的 HTTPException
@@ -391,22 +375,21 @@ async def create_wechat_account(
         )
 
 
-@router.delete("/{mp_id}", summary="删除订阅号")
-@legacy_router.delete("/{mp_id}", summary="删除订阅号")
+@router.delete("/{wechat_account_id}", summary="删除订阅号")
 async def delete_mp(
-    mp_id: str,
+    wechat_account_id: str,
     _current_user: dict = Depends(get_current_user),
 ):
     try:
-        mp = await feed_repo.get_feed_by_id(mp_id)
+        mp = await wechat_account_repo.get_wechat_account_by_id(wechat_account_id)
         if not mp:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=error_response(code=40401, message="订阅号不存在"),
             )
 
-        await feed_repo.delete_feed(mp_id)
-        return success_response({"message": "订阅号删除成功", "id": mp_id})
+        await wechat_account_repo.delete_wechat_account(wechat_account_id)
+        return success_response({"message": "订阅号删除成功", "id": wechat_account_id})
     except Exception as e:
         logger.info(f"删除订阅号错误: {str(e)}")
         raise HTTPException(

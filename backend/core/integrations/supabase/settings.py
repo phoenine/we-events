@@ -25,11 +25,6 @@ def _load_settings() -> SupabaseSettings:
             path=os.getenv("SUPABASE_QR_PATH", "wx/{uuid}.png"),
             expires=int(os.getenv("SUPABASE_QR_SIGN_EXPIRES", "120")),
         ),
-        "avatar": BucketConfig(
-            name=os.getenv("SUPABASE_AVATAR_BUCKET", "avatars"),
-            path=os.getenv("SUPABASE_AVATAR_PATH", "avatars/{uuid}.png"),
-            expires=0,
-        ),
         "articles": BucketConfig(
             name=os.getenv("SUPABASE_ARTICLES_BUCKET", "article-images"),
             path=os.getenv(

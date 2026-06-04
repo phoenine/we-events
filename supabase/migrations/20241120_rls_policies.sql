@@ -4,13 +4,11 @@
 -- backend data layer, so anon/authenticated roles do not get broad table access.
 
 alter table public.profiles enable row level security;
-alter table public.feeds enable row level security;
+alter table public.wechat_accounts enable row level security;
 alter table public.articles enable row level security;
 alter table public.article_images enable row level security;
 alter table public.activities enable row level security;
-alter table public.tags enable row level security;
-alter table public.message_tasks enable row level security;
-alter table public.message_task_logs enable row level security;
+alter table public.wechat_account_groups enable row level security;
 alter table public.config_managements enable row level security;
 alter table public.wechat_auth_sessions enable row level security;
 alter table public.wechat_auth_session_secret enable row level security;
@@ -51,9 +49,9 @@ with check (auth.uid() is not null and auth.uid() = user_id);
 
 -- Backend-managed shared data. These policies are intentionally service role
 -- only because normal product access is mediated by FastAPI.
-drop policy if exists "feeds_service_role_all" on public.feeds;
-create policy "feeds_service_role_all"
-on public.feeds for all
+drop policy if exists "wechat_accounts_service_role_all" on public.wechat_accounts;
+create policy "wechat_accounts_service_role_all"
+on public.wechat_accounts for all
 to service_role
 using (true)
 with check (true);
@@ -79,23 +77,9 @@ to service_role
 using (true)
 with check (true);
 
-drop policy if exists "tags_service_role_all" on public.tags;
-create policy "tags_service_role_all"
-on public.tags for all
-to service_role
-using (true)
-with check (true);
-
-drop policy if exists "message_tasks_service_role_all" on public.message_tasks;
-create policy "message_tasks_service_role_all"
-on public.message_tasks for all
-to service_role
-using (true)
-with check (true);
-
-drop policy if exists "message_task_logs_service_role_all" on public.message_task_logs;
-create policy "message_task_logs_service_role_all"
-on public.message_task_logs for all
+drop policy if exists "wechat_account_groups_service_role_all" on public.wechat_account_groups;
+create policy "wechat_account_groups_service_role_all"
+on public.wechat_account_groups for all
 to service_role
 using (true)
 with check (true);

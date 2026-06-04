@@ -1,5 +1,5 @@
 from core.articles import article_repo
-from core.feeds import feed_repo
+from core.wechat_accounts import wechat_account_repo
 import json
 
 
@@ -34,7 +34,7 @@ def laxArticle():
     info.wrong_count = 0
 
     # 公众号总数
-    info.mp_all_count = feed_repo.sync_count_feeds()
+    info.mp_all_count = wechat_account_repo.sync_count_wechat_accounts()
 
     return info.__dict__
     pass

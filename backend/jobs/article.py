@@ -13,7 +13,7 @@ import uuid
 
 ARTICLE_COLUMNS = {
     "id",
-    "mp_id",
+    "wechat_account_id",
     "title",
     "description",
     "pic_url",

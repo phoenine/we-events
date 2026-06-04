@@ -4,9 +4,9 @@ import re
 from markdownify import markdownify as md
 from core.common.log import logger
 
-# markdown 分支：需要 unwrap 的标签（只保留内容）
+# markdown 分支：需要 unwrap 的公众号分组（只保留内容）
 TAGS_TO_UNWRAP = ["span", "font", "div", "strong", "b"]
-# markdown 分支：需要从所有标签上移除的属性
+# markdown 分支：需要从所有公众号分组上移除的属性
 ATTRS_TO_STRIP = frozenset({"style", "class", "data-pm-slice", "data-title"})
 
 
@@ -16,8 +16,8 @@ def format_content(
 ) -> str:
     """将 HTML 内容格式化为纯文本、Markdown 或保留 HTML。
 
-    - text:  strip 所有标签，保留纯文本，合并多余空行。
-    - markdown: 去掉部分内联标签、清理属性后，用 markdownify 转成 Markdown。
+    - text:  strip 所有公众号分组，保留纯文本，合并多余空行。
+    - markdown: 去掉部分内联公众号分组、清理属性后，用 markdownify 转成 Markdown。
     - html: 原样返回。
     """
     try:

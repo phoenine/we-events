@@ -7,13 +7,9 @@ insert into public.config_managements (config_key, config_value, description) va
   ('gather.content_mode', 'web', '文章补采模式：web/api'),
   ('gather.content_auto_check', 'false', '是否自动补采无内容文章'),
   ('gather.content_auto_interval', '59', '自动补采执行间隔（分钟）'),
-  ('gather.content', 'true', '采集流程是否抓取正文内容'),
-  ('webhook.content_format', 'html', 'Webhook 内容格式：html/markdown/text'),
-  ('avatar.max_bytes', '5242880', '头像上传大小上限（字节）'),
-  ('local_avatar', 'false', '是否下载头像到本地存储')
+  ('gather.content', 'true', '采集流程是否抓取正文内容')
 on conflict (config_key) do update
 set
   config_value = excluded.config_value,
   description = excluded.description,
   updated_at = now();
-

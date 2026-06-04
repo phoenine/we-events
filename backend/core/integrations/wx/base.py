@@ -281,7 +281,7 @@ class WxGather:
 
                 art = {
                     "id": str(data["id"]),
-                    "mp_id": data["mp_id"],
+                    "wechat_account_id": data["wechat_account_id"],
                     "title": data["title"],
                     "url": data["link"],
                     "pic_url": data["cover"],
@@ -342,7 +342,7 @@ class WxGather:
             raise e
         return msg
 
-    def Start(self, mp_id=None):
+    def Start(self, wechat_account_id=None):
         self.articles = []
         # 仅初始化 cookies + headers；token 不在此处推导
         self.ensure_http_context(force_refresh=True)
@@ -352,7 +352,7 @@ class WxGather:
         import time
 
         self.update_mps(
-            mp_id,
+            wechat_account_id,
             {
                 "sync_time": int(time.time()),
                 "update_time": int(time.time()),
@@ -377,7 +377,7 @@ class WxGather:
                     error,
                     code,
                     {
-                        "mp_id": None,
+                        "wechat_account_id": None,
                         "has_cookies": bool(getattr(self, "cookies", "")),
                         "has_token": bool(getattr(self, "token", "")),
                     },
@@ -397,16 +397,16 @@ class WxGather:
         - 清缓存/持久化等副作用交由 hooks.on_over。
         - 保留 CallBack 兼容外部旧调用。
         """
-        mp_id: str | None = None
+        wechat_account_id: str | None = None
         try:
             if getattr(self, "articles", None):
-                mp_id = self.articles[0].get("mp_id")
+                wechat_account_id = self.articles[0].get("wechat_account_id")
         except Exception:
-            mp_id = None
+            wechat_account_id = None
 
         try:
             if self.hooks and self.hooks.on_over:
-                self.hooks.on_over(self.articles or [], mp_id)
+                self.hooks.on_over(self.articles or [], wechat_account_id)
         except Exception:
             pass
 
@@ -478,7 +478,7 @@ class WxGather:
                 flags=re.DOTALL | re.IGNORECASE,
             )
 
-            # 再移除常见无关标签
+            # 再移除常见无关公众号分组
             cleaned = re.sub(
                 r"<script[^>]*>.*?</script>",
                 "",
@@ -513,15 +513,15 @@ class WxGather:
 
         # 常见的需要移除的HTML元素模式
         common_patterns = [
-            # 移除script标签及其内容
+            # 移除script公众号分组及其内容
             r"<script[^>]*>.*?</script>",
-            # 移除style标签及其内容
+            # 移除style公众号分组及其内容
             r"<style[^>]*>.*?</style>",
             # 移除注释
             r"<!--.*?-->",
-            # 移除iframe标签
+            # 移除iframe公众号分组
             r"<iframe[^>]*>.*?</iframe>",
-            # 移除noscript标签
+            # 移除noscript公众号分组
             r"<noscript[^>]*>.*?</noscript>",
             # 移除广告相关的div（包含特定class或id）
             r'<div[^>]*(?:class|id)=["\'][^"\']*(?:ad|advertisement|banner)[^"\']*["\'][^>]*>.*?</div>',
@@ -537,10 +537,10 @@ class WxGather:
         html_content = self._clean_article_content(html_content)
         return self.remove_html_region(html_content, common_patterns)
 
-    def update_mps(self, mp_id: str, mp: dict):
+    def update_mps(self, wechat_account_id: str, mp: dict):
         """更新公众号同步状态/时间（副作用由 hooks 实现）。"""
         try:
             if self.hooks and self.hooks.on_update_mps:
-                self.hooks.on_update_mps(mp_id, mp)
+                self.hooks.on_update_mps(wechat_account_id, mp)
         except Exception:
             pass

@@ -23,12 +23,6 @@
         </template>
         活动管理
       </a-menu-item>
-      <a-menu-item key="/message-tasks">
-        <template #icon>
-          <icon-notification />
-        </template>
-        消息任务
-      </a-menu-item>
       <a-menu-item key="/configs">
         <template #icon>
           <icon-settings />

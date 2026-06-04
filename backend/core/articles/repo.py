@@ -29,15 +29,15 @@ class ArticleRepository:
 
     async def get_articles(
         self,
-        mp_id: Optional[str] = None,
+        wechat_account_id: Optional[str] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
         order_by: str = "publish_time.desc",
     ):
         """根据公众号ID获取文章列表"""
         filters = {}
-        if mp_id is not None:
-            filters["mp_id"] = mp_id
+        if wechat_account_id is not None:
+            filters["wechat_account_id"] = wechat_account_id
 
         return await self.client.select(
             self.ARTICLE_TABLE,
@@ -47,16 +47,16 @@ class ArticleRepository:
             order=order_by,
         )
 
-    async def get_articles_by_mp_ids(
+    async def get_articles_by_wechat_account_ids(
         self,
-        mp_ids: List[str],
+        wechat_account_ids: List[str],
         limit: Optional[int] = None,
         offset: Optional[int] = None,
     ):
-        """根据公众号ID列表获取文章"""
+        """根据公众号账号 ID 列表获取文章"""
         return await self.client.select(
             self.ARTICLE_TABLE,
-            filters={"mp_id": {"in": mp_ids}},
+            filters={"wechat_account_id": {"in": wechat_account_ids}},
             limit=limit,
             offset=offset,
             order="publish_time.desc",
@@ -88,11 +88,11 @@ class ArticleRepository:
         """统计文章数量"""
         return await self.client.count(self.ARTICLE_TABLE, filters=filters)
 
-    async def count_articles(self, mp_id=None):
+    async def count_articles(self, wechat_account_id=None):
         """统计文章数量"""
         filters = {}
-        if mp_id is not None:
-            filters["mp_id"] = mp_id
+        if wechat_account_id is not None:
+            filters["wechat_account_id"] = wechat_account_id
         return await self.client.count(self.ARTICLE_TABLE, filters=filters)
 
     async def search_articles(self, keyword: str, limit: int = 100):
@@ -115,7 +115,7 @@ class ArticleRepository:
     # TODO: 统一文章列表查询接口, 支持 search + 过滤条件
     # async def list_articles(
     #     self,
-    #     mp_id: Optional[str] = None,
+    #     wechat_account_id: Optional[str] = None,
     #     status: Optional[int] = None,
     #     search: Optional[str] = None,
     #     limit: Optional[int] = None,
@@ -124,8 +124,8 @@ class ArticleRepository:
     # ) -> tuple[list[dict[str, Any]], int]:
     #     """
     #     统一的文章列表查询：
-    #     - 支持按 mp_id + status 过滤
-    #     - 支持搜索（search 一旦有值，将忽略 mp_id/status 过滤，与当前 API 行为保持一致）
+    #     - 支持按 wechat_account_id + status 过滤
+    #     - 支持搜索（search 一旦有值，将忽略 wechat_account_id/status 过滤，与当前 API 行为保持一致）
     #     - 返回 (articles, total)
     #     """
     #     if search:
@@ -140,10 +140,10 @@ class ArticleRepository:
     #             articles = raw
     #         return articles, total
     #
-    #     # 非搜索模式：按 mp_id + status 过滤
+    #     # 非搜索模式：按 wechat_account_id + status 过滤
     #     filters: dict[str, Any] = {}
-    #     if mp_id is not None:
-    #         filters["mp_id"] = mp_id
+    #     if wechat_account_id is not None:
+    #         filters["wechat_account_id"] = wechat_account_id
     #     if status is not None:
     #         filters["status"] = status
     #
@@ -154,7 +154,7 @@ class ArticleRepository:
     #         offset=offset,
     #         order=order_by,
     #     )
-    #     total = await self.count_articles(mp_id=mp_id, status=status)
+    #     total = await self.count_articles(wechat_account_id=wechat_account_id, status=status)
     #     return articles, total
 
     async def clean_expired_articles(self, days: int = 15):

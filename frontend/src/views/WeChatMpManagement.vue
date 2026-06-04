@@ -45,7 +45,7 @@
         </a-form-item>
         <a-form-item label="封面图" field="mp_cover">
           <a-upload
-            action="/wx/mps/upload"
+            action="/wx/wechat-accounts/upload"
             :headers="headers"
             @success="handleUploadSuccess"
           />

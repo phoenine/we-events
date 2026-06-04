@@ -150,7 +150,7 @@ async def create_activity(
 
         activity_data = {
             "article_id": payload.article_id,
-            "source_feed_id": art.get("mp_id"),
+            "source_wechat_account_id": payload.source_wechat_account_id or art.get("wechat_account_id"),
             "title": payload.title or art.get("title") or "",
             "original_title": payload.original_title or art.get("title") or "",
             "registration_time_text": payload.registration_time_text or "",
@@ -161,8 +161,17 @@ async def create_activity(
             "audience": payload.audience or "无",
             "article_url": art.get("url") or "无",
             "status": payload.status or "active",
-            "extraction_status": "reviewed",
-            "extracted_by": "manual",
+            "extraction_status": payload.extraction_status or "reviewed",
+            "fallback_reason": payload.fallback_reason,
+            "confidence": payload.confidence,
+            "extracted_by": payload.extracted_by or "manual",
+            "extraction_model": payload.extraction_model,
+            "extraction_raw": payload.extraction_raw or {},
+            "reviewed_at": (
+                payload.reviewed_at.isoformat()
+                if payload.reviewed_at
+                else now.isoformat()
+            ),
             "created_at": created_at.isoformat(),
             "updated_at": updated_at.isoformat(),
         }
@@ -253,12 +262,32 @@ async def update_activity(
             update_data["audience"] = payload.audience
         if payload.status is not None:
             update_data["status"] = payload.status
+        if payload.source_wechat_account_id is not None:
+            update_data["source_wechat_account_id"] = payload.source_wechat_account_id
+        if payload.extraction_status is not None:
+            update_data["extraction_status"] = payload.extraction_status
+        if payload.fallback_reason is not None:
+            update_data["fallback_reason"] = payload.fallback_reason
+        if payload.confidence is not None:
+            update_data["confidence"] = payload.confidence
+        if payload.extracted_by is not None:
+            update_data["extracted_by"] = payload.extracted_by
+        if payload.extraction_model is not None:
+            update_data["extraction_model"] = payload.extraction_model
+        if payload.extraction_raw is not None:
+            update_data["extraction_raw"] = payload.extraction_raw
+        if payload.reviewed_at is not None:
+            update_data["reviewed_at"] = payload.reviewed_at.isoformat()
 
         # 每次更新都从文章库刷新一次URL（保证一致性）
         article_rows = await article_repo.get_articles_by_id(activity["article_id"])
         art = article_rows[0] if article_rows else None
-        update_data["article_url"] = (art.get("url") if art else None) or "无"
-        update_data["extraction_status"] = "reviewed"
+        update_data["article_url"] = (
+            payload.article_url
+            if payload.article_url is not None
+            else (art.get("url") if art else None) or "无"
+        )
+        update_data.setdefault("extraction_status", "reviewed")
 
         # 时间字段更新（允许覆盖created_at；若未提供updated_at则写当前时间）
         if payload.created_at is not None:

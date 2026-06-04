@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 class Activity(BaseModel):
     id: Optional[str] = None
     article_id: str = ""
-    source_feed_id: Optional[str] = None
+    source_wechat_account_id: Optional[str] = None
     article_url: str = ""
 
     title: str = ""

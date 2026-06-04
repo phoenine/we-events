@@ -66,7 +66,7 @@ class MpsApi(WxGather):
             except Exception:
                 pass
 
-            # 处理正文内图片标签：data-src -> src，并统一宽度
+            # 处理正文内图片公众号分组：data-src -> src，并统一宽度
             try:
                 img_tags = js_content_div.find_all("img")
                 for img in img_tags:
@@ -114,13 +114,13 @@ class MpsApi(WxGather):
         - Over_CallBack: 全部结束回调
 
         流程概览：
-        1) Start(mp_id=...) 初始化会话上下文（cookie/UA/headers/session）。
+        1) Start(wechat_account_id=...) 初始化会话上下文（cookie/UA/headers/session）。
         2) 调用 /cgi-bin/appmsg 获取文章列表（分页）。
         3) 对每条文章：按需抓取 content，并触发回调。
         4) 处理频控/会话失效等错误码并退出循环。
         """
         # 1) 初始化会话上下文（cookie/UA/headers/session），不在此处派生 token
-        self.Start(mp_id=Mps_id)
+        self.Start(wechat_account_id=Mps_id)
 
         # 2) appmsg 列表接口
         url = "https://mp.weixin.qq.com/cgi-bin/appmsg"
@@ -204,8 +204,8 @@ class MpsApi(WxGather):
             try:
                 for item in items:
                     try:
-                        # 补齐 mp_id（供回调与上层处理）
-                        item["mp_id"] = Mps_id
+                        # 补齐 wechat_account_id（供回调与上层处理）
+                        item["wechat_account_id"] = Mps_id
 
                         # 去重：防止同一文章重复采集/回调（aid/链接有时可能重复）
                         aid = str(item.get("aid") or "").strip()
@@ -239,7 +239,7 @@ class MpsApi(WxGather):
                 super().Item_Over(item=i, CallBack=Item_Over_CallBack)
 
             logger.info(
-                f"[dedup-debug] mode=api mp_id={Mps_id} page={i} "
+                f"[dedup-debug] mode=api wechat_account_id={Mps_id} page={i} "
                 f"candidates={page_candidates} skip_existing={page_skip_existing} "
                 f"processed={page_processed} gather_content={Gather_Content}"
             )

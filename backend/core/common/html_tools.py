@@ -59,7 +59,7 @@ class HtmlTools:
                 cleaned_content, remove_attributes
             )
 
-        # 移除空文本元素（排除媒体标签）
+        # 移除空文本元素（排除媒体公众号分组）
         cleaned_content = self.remove_empty_text_elements(cleaned_content)
 
         return cleaned_content
@@ -118,7 +118,7 @@ class HtmlTools:
             return html_content
 
     def remove_empty_text_elements(self, html_content: str) -> str:
-        """移除空文本元素，但排除图片等媒体标签
+        """移除空文本元素，但排除图片等媒体公众号分组
 
         Args:
             html_content: 原始HTML内容
@@ -140,7 +140,7 @@ class HtmlTools:
             soup = BeautifulSoup(html_content, "html.parser")
             removed_count = 0
 
-            # 媒体标签列表（这些标签即使没有文本内容也应该保留）
+            # 媒体公众号分组列表（这些公众号分组即使没有文本内容也应该保留）
             media_tags = [
                 "img",
                 "video",
@@ -159,7 +159,7 @@ class HtmlTools:
             all_elements = soup.find_all()
 
             for element in all_elements:
-                # 跳过媒体标签
+                # 跳过媒体公众号分组
                 if element.name in media_tags:
                     continue
 

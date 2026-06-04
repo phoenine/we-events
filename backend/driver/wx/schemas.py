@@ -30,7 +30,7 @@ class WxArticleInfo(TypedDict, total=False):
     content: str
     images: List[str]
     mp_info: WxMpInfo
-    mp_id: str
+    wechat_account_id: str
     pic_url: str
     description: str
     topic_image: str        # 话题 / 专题头图（如有）
