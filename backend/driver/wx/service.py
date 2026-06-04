@@ -204,7 +204,7 @@ class WxService:
                     if not auth_session_store.valid_session_db():
                         return
 
-                    # 归一化为 auth_sessions.status 允许值，避免状态约束导致更新失败
+                    # 归一化为 wechat_auth_sessions.status 允许值，避免状态约束导致更新失败
                     status_map = {
                         LoginState.IDLE.value: "waiting",
                         LoginState.STARTING.value: "waiting",
@@ -226,7 +226,7 @@ class WxService:
                     if session_id:
                         def _do_update() -> None:
                             logger.info(
-                                f"[wx-db] update auth_sessions id={session_id} payload={payload}"
+                                f"[wx-db] update wechat_auth_sessions id={session_id} payload={payload}"
                             )
                             ok = auth_session_store.update_session_sync(session_id, **payload)
                             logger.info(f"[wx-db] update result id={session_id} ok={ok}")

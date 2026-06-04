@@ -19,11 +19,11 @@ class ProfilesRepository:
         )
         return rows[0] if rows else None
 
-    async def update_avatar(self, user_id: str, avatar_url: str) -> Dict[str, Any]:
-        """更新（或插入）用户头像 URL"""
+    async def update_avatar(self, user_id: str, avatar_path: str) -> Dict[str, Any]:
+        """更新（或插入）用户头像对象路径。"""
         payload: Dict[str, Any] = {
             "user_id": user_id,
-            "avatar_url": avatar_url,
+            "avatar_path": avatar_path,
         }
 
         # 使用 upsert 以 user_id 作为冲突键实现插入或更新

@@ -15,9 +15,14 @@ ARTICLE_COLUMNS = {
     "id",
     "mp_id",
     "title",
+    "description",
+    "pic_url",
     "content",
     "content_md",
-    "is_gathered",
+    "content_fetch_status",
+    "content_fetch_error",
+    "activity_extraction_status",
+    "activity_extraction_error",
     "publish_time",
     "url",
     "created_at",
@@ -164,8 +169,6 @@ def _normalize_article_for_db(article: dict) -> dict:
     data = dict(article or {})
 
     # 表外字段（采集上下文）不入库
-    data.pop("description", None)
-    data.pop("pic_url", None)
     data.pop("images", None)
     data.pop("mp_info", None)
     data.pop("ext", None)
@@ -195,8 +198,8 @@ def UpdateArticle(art: dict, check_exist: bool = False):
     try:
         art, image_mappings = _upload_article_images(dict(art))
         art = _ensure_content_markdown(art)
-        # 业务语义：采集入库后默认未用于活动提取，统一为 false
-        art["is_gathered"] = False
+        art["content_fetch_status"] = "fetched" if art.get("content") else "pending"
+        art["activity_extraction_status"] = "pending"
         art = _normalize_article_for_db(art)
         # 使用 Supabase 创建文章
         result = article_repo.sync_create_article(art)

@@ -1,4 +1,4 @@
-# WeRSS Backend
+# WeChat Activity Subscription Backend
 
 微信公众号文章采集与订阅后端服务，基于 FastAPI + Supabase + Playwright。
 
@@ -7,10 +7,10 @@
 本项目负责以下能力：
 
 - 公众号检索、订阅管理、文章采集
-- 文章内容清洗与导出（HTML/PDF/Markdown）
+- 文章内容清洗、图片入库与活动抽取
 - 登录授权（二维码登录状态管理）
 - 消息任务（定时采集 + Webhook 通知）
-- 标签、事件、配置管理等后台接口
+- 标签、活动、配置管理等后台接口
 
 ## 2. 技术栈
 
@@ -32,7 +32,6 @@ backend/
 │   ├── articles|feeds|...    # 各业务领域仓储与模型
 ├── driver/                   # 浏览器与会话驱动层（Playwright/Wx）
 ├── jobs/                     # 定时任务与异步任务编排
-├── ops/                      # 运维脚本与迁移相关
 ├── devtools/                 # 本地调试/辅助开发脚本
 ├── main.py                   # 进程启动入口
 ├── web.py                    # FastAPI 应用入口
@@ -56,7 +55,7 @@ playwright install firefox
 
 ### 4.3 配置
 
-请配置 `.env`（或系统环境变量）：
+本地后端运行推荐配置 `backend/.env`（或系统环境变量）：
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
@@ -64,6 +63,8 @@ playwright install firefox
 - `PORT` / `LOG_LEVEL` / `LOG_FILE`
 - `ENABLE_JOB` / `AUTO_RELOAD` / `THREADS`
 - `USERNAME` / `PASSWORD`（初始化管理员账号）
+
+数据库 schema 与 Supabase Storage 初始化以根目录 `supabase/README.md` 为准。
 
 ## 5. 启动方式
 
@@ -114,7 +115,7 @@ python main.py -job True -init True
 - `message_tasks`：消息任务管理
 - `configs`：配置管理
 - `tags`：标签管理
-- `events`：事件管理
+- `activities`：活动管理
 - `sys`：系统信息
 
 ## 8. 日志与任务
@@ -141,7 +142,6 @@ rg "APIRouter\\(|@router" apis
 
 - Playwright 与会话状态对抓取流程影响较大，建议在稳定网络和固定环境下运行。
 - 生产环境请显式配置 CORS 白名单、Supabase 凭据与通知 Webhook。
-- 若启用会话落库，请先创建 `supabase/auth_sessions.sql` 对应表结构。
-- 若启用文章图片映射，请先创建 `supabase/migrations/article_images.sql` 对应表结构。
-- 标签采用一对多（`feeds.tag_id`）时，请先执行 `supabase/migrations/20260303_feeds_add_tag_id.sql`。
-- 若历史库仍存在 `article_tags` / `feed_tags`，可执行 `supabase/migrations/drop_article_tags.sql` 与 `supabase/migrations/drop_feed_tags.sql` 清理。
+- 前端只通过 FastAPI 访问业务数据；Supabase 表访问由后端 service role 统一管理。
+- 公众号扫码登录态是系统/admin 维护的采集凭据，不按普通用户分别维护。
+- 文章图片 bucket 为 `article-images`，用户头像 bucket 为 `avatars`，二维码 bucket 为 `qr`。

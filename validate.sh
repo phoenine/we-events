@@ -1,285 +1,173 @@
 #!/bin/bash
 
-# WeRSS Supabase Migration Validation Script
-# This script validates the migration configuration without requiring Docker builds
+# Backend + Supabase cleanup validation.
+# This validates the current FastAPI + Supabase clean-baseline structure.
 
 set -e
 
-echo "🔍 Starting WeRSS Supabase Migration Validation"
-
-# Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Function to print colored output
-print_status() {
-    local status=$1
-    local message=$2
-    case $status in
-        "success")
-            echo -e "${GREEN}✅ $message${NC}"
-            ;;
-        "error")
-            echo -e "${RED}❌ $message${NC}"
-            ;;
-        "warning")
-            echo -e "${YELLOW}⚠️  $message${NC}"
-            ;;
-        "info")
-            echo -e "ℹ️  $message"
-            ;;
-    esac
+errors=0
+
+ok() {
+  echo -e "${GREEN}[ok]${NC} $1"
 }
 
-# Function to check file existence
+warn() {
+  echo -e "${YELLOW}[warn]${NC} $1"
+}
+
+fail() {
+  echo -e "${RED}[fail]${NC} $1"
+  errors=$((errors + 1))
+}
+
 check_file() {
-    local file=$1
-    local description=$2
-    if [ -f "$file" ]; then
-        print_status "success" "$description found: $file"
-        return 0
-    else
-        print_status "error" "$description not found: $file"
-        return 1
-    fi
+  local path="$1"
+  if [ -f "$path" ]; then
+    ok "file exists: $path"
+  else
+    fail "missing file: $path"
+  fi
 }
 
-# Function to check directory existence
-check_directory() {
-    local dir=$1
-    local description=$2
-    if [ -d "$dir" ]; then
-        print_status "success" "$description found: $dir"
-        return 0
-    else
-        print_status "error" "$description not found: $dir"
-        return 1
-    fi
+check_dir() {
+  local path="$1"
+  if [ -d "$path" ]; then
+    ok "directory exists: $path"
+  else
+    fail "missing directory: $path"
+  fi
 }
 
-# Function to validate Dockerfiles
-validate_dockerfile() {
-    local dockerfile=$1
-    local service=$2
+echo "Starting Backend + Supabase validation"
 
-    if [ ! -f "$dockerfile" ]; then
-        print_status "error" "$service Dockerfile not found: $dockerfile"
-        return 1
-    fi
+check_dir "backend"
+check_dir "frontend"
+check_dir "supabase/migrations"
 
-    print_status "info" "Validating $service Dockerfile..."
+check_file "backend/web.py"
+check_file "backend/apis/activities.py"
+check_file "backend/core/activities/repo.py"
+check_file "backend/core/activities/service.py"
+check_file "backend/core/activities/agent.py"
+check_file "backend/schemas/activities.py"
+check_file "supabase/migrations/20241120_initial_schema.sql"
+check_file "supabase/migrations/20241120_rls_policies.sql"
+check_file "supabase/config_managements_seed.sql"
+check_file "supabase/README.md"
+check_file "backend/README.md"
+check_file "backend/requirements.txt"
+check_file "docker-compose.yaml"
 
-    # Check for common issues
-    if grep -q "ws-supabase" "$dockerfile"; then
-        print_status "error" "$service Dockerfile contains incorrect path references"
-        return 1
-    fi
+echo ""
+echo "Checking Supabase SQL text"
 
-    if grep -q "web_ui" "$dockerfile"; then
-        print_status "error" "$service Dockerfile contains old path references"
-        return 1
-    fi
+if grep -q "create table.*public.events" supabase/migrations/*.sql; then
+  fail "old public.events table creation still exists"
+else
+  ok "no public.events table creation"
+fi
 
-    # Check for required instructions
-    if ! grep -q "FROM" "$dockerfile"; then
-        print_status "error" "$service Dockerfile missing FROM instruction"
-        return 1
-    fi
+if grep -q "create table.*public.auth_sessions" supabase/migrations/*.sql; then
+  fail "old public.auth_sessions table creation still exists"
+else
+  ok "no old auth_sessions table creation"
+fi
 
-    if ! grep -q "EXPOSE" "$dockerfile"; then
-        print_status "warning" "$service Dockerfile missing EXPOSE instruction"
-    fi
+if grep -q "create table if not exists public.activities" supabase/migrations/20241120_initial_schema.sql; then
+  ok "activities table exists in baseline"
+else
+  fail "activities table missing from baseline"
+fi
 
-    print_status "success" "$service Dockerfile validation passed"
-    return 0
-}
+if grep -q "wechat_auth_sessions" supabase/migrations/20241120_initial_schema.sql; then
+  ok "wechat auth session tables exist in baseline"
+else
+  fail "wechat auth session tables missing from baseline"
+fi
 
-# Function to validate Python code
-validate_python() {
-    local file=$1
-    local description=$2
+if grep -q "'article-images'" supabase/migrations/20241120_initial_schema.sql; then
+  ok "article-images bucket default exists"
+else
+  fail "article-images bucket default missing"
+fi
 
-    if [ ! -f "$file" ]; then
-        print_status "error" "$description not found: $file"
-        return 1
-    fi
+echo ""
+echo "Checking backend naming"
 
-    print_status "info" "Validating $description..."
+if [ -d "backend/core/events" ] || [ -f "backend/apis/events.py" ] || [ -f "backend/schemas/events.py" ]; then
+  fail "old events backend modules still exist"
+else
+  ok "old events backend modules are removed"
+fi
 
-    # Check for Python syntax errors
-    if python3 -m py_compile "$file" 2>/dev/null; then
-        print_status "success" "$description syntax is valid"
-    else
-        print_status "error" "$description has syntax errors"
-        return 1
-    fi
+if grep -R "core\.events\|apis\.events\|schemas\.events\|EVENT_TABLE = \"events\"" backend --exclude-dir=.venv --exclude-dir=__pycache__ >/dev/null 2>&1; then
+  fail "old events imports/table references still exist"
+else
+  ok "no old events imports/table references"
+fi
 
-    return 0
-}
+if grep -R "is_gathered\|profiles\.avatar_url" backend supabase --exclude-dir=.venv --exclude-dir=__pycache__ >/dev/null 2>&1; then
+  fail "old article/profile fields still referenced in backend or Supabase SQL"
+else
+  ok "no old is_gathered/profile avatar_url references"
+fi
 
-# Function to validate configuration files
-validate_config() {
-    local file=$1
-    local description=$2
+echo ""
+echo "Checking Python compilation"
 
-    if [ ! -f "$file" ]; then
-        print_status "error" "$description not found: $file"
-        return 1
-    fi
+if python -m compileall -q backend/apis backend/core backend/driver backend/jobs backend/schemas backend/init_sys.py backend/web.py; then
+  ok "backend Python compilation passed"
+else
+  fail "backend Python compilation failed"
+fi
 
-    print_status "info" "Validating $description..."
+echo ""
+echo "Checking FastAPI route registration"
 
-    # Check for required environment variables
-    if [[ "$file" == *.env* ]]; then
-        local required_vars=("POSTGRES_PASSWORD" "POSTGRES_HOST" "POSTGRES_PORT" "POSTGRES_DB")
-        for var in "${required_vars[@]}"; do
-            if grep -q "^$var=" "$file"; then
-                print_status "success" "Environment variable $var is set"
-            else
-                print_status "warning" "Environment variable $var is missing"
-            fi
-        done
-    fi
+if [ -x "backend/.venv/bin/python" ]; then
+  ROUTE_OUTPUT=$(backend/.venv/bin/python -c "import sys; sys.path.insert(0, 'backend'); from web import app; paths=sorted({r.path for r in app.routes if hasattr(r,'path')}); print([p for p in paths if '/activities' in p]); print([p for p in paths if '/events' in p])" 2>/dev/null || true)
+  if echo "$ROUTE_OUTPUT" | grep -q "/activities" && ! echo "$ROUTE_OUTPUT" | grep -q "/events"; then
+    ok "FastAPI registers /activities and no /events"
+  else
+    fail "FastAPI route registration check failed"
+  fi
+else
+  warn "backend/.venv/bin/python not found; skipped FastAPI import check"
+fi
 
-    # Check for YAML syntax
-    if [[ "$file" == *.yaml ]] || [[ "$file" == *.yml ]]; then
-        if command -v yq >/dev/null 2>&1; then
-            if yq eval '.' "$file" >/dev/null 2>&1; then
-                print_status "success" "$description YAML syntax is valid"
-            else
-                print_status "error" "$description has YAML syntax errors"
-                return 1
-            fi
-        else
-            print_status "warning" "yq not found, skipping YAML validation"
-        fi
-    fi
+echo ""
+echo "Checking requirements and package manager drift"
 
-    return 0
-}
+if grep -q "^psycopg2-binary=[^=]" backend/requirements.txt; then
+  fail "backend/requirements.txt has invalid psycopg2-binary pin syntax"
+else
+  ok "backend/requirements.txt psycopg2-binary pin syntax is valid"
+fi
 
-# Main validation function
-main() {
-    echo "🚀 Starting validation process..."
+lockfiles=0
+[ -f "frontend/package-lock.json" ] && lockfiles=$((lockfiles + 1))
+[ -f "frontend/pnpm-lock.yaml" ] && lockfiles=$((lockfiles + 1))
+[ -f "frontend/yarn.lock" ] && lockfiles=$((lockfiles + 1))
 
-    local errors=0
+if [ "$lockfiles" -gt 1 ]; then
+  warn "frontend has multiple lockfiles; cleanup spec recommends keeping one package manager"
+else
+  ok "frontend lockfile count is consistent"
+fi
 
-    # Check project structure
-    print_status "info" "Checking project structure..."
+echo ""
+echo "Validation summary"
+echo "=================="
 
-    check_directory "backend" "Backend directory" || ((errors++))
-    check_directory "frontend" "Frontend directory" || ((errors++))
-    check_directory ".github/workflows" "GitHub workflows directory" || ((errors++))
+if [ "$errors" -eq 0 ]; then
+  ok "validation passed"
+  exit 0
+fi
 
-    # Check configuration files
-    print_status "info" "Checking configuration files..."
-
-    check_file ".env" "Environment file" || ((errors++))
-    check_file "docker-compose.yaml" "Docker Compose file" || ((errors++))
-    check_file "backend/config.example.yaml" "Backend config example" || ((errors++))
-
-    # Validate Dockerfiles
-    print_status "info" "Validating Dockerfiles..."
-
-    validate_dockerfile "backend/Dockerfile" "Backend" || ((errors++))
-    validate_dockerfile "frontend/Dockerfile" "Frontend" || ((errors++))
-
-    # Validate Docker Compose
-    print_status "info" "Validating Docker Compose configuration..."
-
-    if [ -f "docker-compose.yaml" ]; then
-        # Check for required services and port configuration
-        if grep -q "backend:" "docker-compose.yaml"; then
-            print_status "success" "Backend service defined"
-
-            # Check for port 38001
-            if grep -q "38001:38001" "docker-compose.yaml"; then
-                print_status "success" "Backend port 38001 configured"
-            else
-                print_status "error" "Backend port 38001 not configured"
-                ((errors++))
-            fi
-        else
-            print_status "error" "Backend service not defined"
-            ((errors++))
-        fi
-
-        if grep -q "frontend:" "docker-compose.yaml"; then
-            print_status "success" "Frontend service defined"
-        else
-            print_status "error" "Frontend service not defined"
-            ((errors++))
-        fi
-
-        # Check for environment variables
-        if grep -q "DB=" "docker-compose.yaml"; then
-            print_status "success" "Database configuration found"
-        else
-            print_status "error" "Database configuration missing"
-            ((errors++))
-        fi
-
-        # Check for API base URL
-        if grep -q "VITE_API_BASE_URL.*38001" "docker-compose.yaml"; then
-            print_status "success" "API base URL configured for port 38001"
-        else
-            print_status "error" "API base URL not configured for port 38001"
-            ((errors++))
-        fi
-    fi
-
-    # Validate Python code
-    print_status "info" "Validating Python code..."
-
-    validate_python "backend/core/db.py" "Database module" || ((errors++))
-    validate_python "backend/data_sync.py" "Data synchronization module" || ((errors++))
-    validate_python "backend/web.py" "Web application" || ((errors++))
-
-    # Validate environment configuration
-    print_status "info" "Validating environment configuration..."
-
-    if [ -f ".env" ]; then
-        validate_config ".env" "Environment file" || ((errors++))
-    fi
-
-    # Check for GitHub Actions workflow
-    print_status "info" "Checking CI/CD configuration..."
-
-    if [ -f ".github/workflows/build-and-deploy.yml" ]; then
-        print_status "success" "GitHub Actions workflow found"
-        validate_config ".github/workflows/build-and-deploy.yml" "CI/CD workflow" || ((errors++))
-    else
-        print_status "warning" "GitHub Actions workflow not found"
-    fi
-
-    # Summary
-    echo ""
-    echo "📋 Validation Summary:"
-    echo "====================="
-
-    if [ $errors -eq 0 ]; then
-        print_status "success" "All validations passed! 🎉"
-        echo ""
-        echo "✨ Your WeRSS Supabase migration is ready for deployment!"
-        echo ""
-        echo "🚀 Next steps:"
-        echo "  1. Review the migration guide: MIGRATION_GUIDE.md"
-        echo "  2. Update .env with your Supabase credentials"
-        echo "  3. Run deployment: ./deploy.sh"
-        echo "  4. Access your application at:"
-        echo "     - Frontend: http://localhost:30000"
-        echo "     - Backend API: http://localhost:38001"
-        echo "     - API Documentation: http://localhost:38001/api/docs"
-        return 0
-    else
-        print_status "error" "Validation failed with $errors error(s)"
-        echo ""
-        echo "🔧 Please fix the issues above before proceeding with deployment."
-        return 1
-    fi
-}
-
-# Run main function
-main "$@"
+fail "$errors validation error(s)"
+exit 1

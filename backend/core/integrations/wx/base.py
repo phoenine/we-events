@@ -21,7 +21,7 @@ class WxGatherHooks:
     """WxGather 的副作用钩子（由编排层注入）。
 
     目标：
-    - core.wx 作为采集库，不直接依赖 DB/RSS/通知/队列等外部基础设施。
+    - core.wx 作为采集库，不直接依赖 DB/通知/队列等外部基础设施。
     - 由调用方注入 hooks，在关键节点触发副作用。
 
     约定：
@@ -44,7 +44,7 @@ class WxGather:
         # requests 不支持给 Session 设置默认 timeout；统一在请求处显式传 timeout
         self._timeout = (5, 10)
 
-        # hooks：外部副作用（DB/RSS/通知/队列/清会话等）由编排层注入
+        # hooks：外部副作用（DB/通知/队列/清会话等）由编排层注入
         self.hooks: WxGatherHooks | None = hooks
         if self.hooks is None:
             # 默认 hooks 放在 core.common.task.wx_hooks，避免 base 直接依赖基础设施实现
@@ -394,7 +394,7 @@ class WxGather:
     def Over(self, CallBack=None):
         """抓取结束收尾。
 
-        - RSS 清缓存/持久化等副作用交由 hooks.on_over。
+        - 清缓存/持久化等副作用交由 hooks.on_over。
         - 保留 CallBack 兼容外部旧调用。
         """
         mp_id: str | None = None

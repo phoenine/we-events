@@ -18,6 +18,9 @@ env/
 build/
 dist/
 .cache/
+.codegraph/
+.superpowers/
+docs/
 
 .ipynb_checkpoints/
 

@@ -12,7 +12,7 @@ from apis.config_management import router as config_router
 from apis.message_task import router as task_router
 from apis.sys_info import router as sys_info_router
 from apis.tags import router as tags_router
-from apis.events import router as events_router
+from apis.activities import router as activities_router
 
 from core.common.app_settings import settings
 from core.common.log import configure_logger
@@ -86,7 +86,7 @@ api_router.include_router(config_router)
 api_router.include_router(task_router)
 api_router.include_router(sys_info_router)
 api_router.include_router(tags_router)
-api_router.include_router(events_router)
+api_router.include_router(activities_router)
 
 resource_router = APIRouter(prefix="/static")
 resource_router.include_router(res_router)
