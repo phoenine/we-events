@@ -4,6 +4,7 @@ import {
   PlusOutlined,
   ReloadOutlined,
   SyncOutlined,
+  ThunderboltOutlined,
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -34,6 +35,7 @@ import {
   deleteArticlesBatch,
   listArticles,
 } from "@/api/articles";
+import { extractArticleActivities } from "@/api/activities";
 import { listWechatAccounts, syncWechatAccountArticles } from "@/api/wechatAccounts";
 import EmptyState from "@/components/common/EmptyState";
 import PageHeader from "@/components/common/PageHeader";
@@ -42,16 +44,17 @@ import { formatEpochSeconds } from "@/utils/time";
 
 export default function ArticlesPage() {
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [wechatAccountId, setWechatAccountId] = useState<string>();
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [selected, setSelected] = useState<Article | null>(null);
+  const [extractingArticleId, setExtractingArticleId] = useState<string>();
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncForm] = Form.useForm();
   const queryClient = useQueryClient();
   const { message, modal } = App.useApp();
-  const pageSize = 20;
   const query = useQuery({
-    queryKey: ["articles", page, wechatAccountId],
+    queryKey: ["articles", page, pageSize, wechatAccountId],
     queryFn: () =>
       listArticles({
         offset: (page - 1) * pageSize,
@@ -99,6 +102,18 @@ export default function ArticlesPage() {
       queryClient.invalidateQueries({ queryKey: ["articles"] });
     },
   });
+  const extractActivity = useMutation({
+    mutationFn: extractArticleActivities,
+    onMutate: (articleId) => setExtractingArticleId(articleId),
+    onSuccess: (data: any) => {
+      const count = data?.created_count ?? 0;
+      message.success(count ? `已抽取 ${count} 条活动` : "未识别到活动");
+      queryClient.invalidateQueries({ queryKey: ["articles"] });
+      queryClient.invalidateQueries({ queryKey: ["activities"] });
+    },
+    onError: (error) => message.error(error instanceof Error ? error.message : "活动抽取失败"),
+    onSettled: () => setExtractingArticleId(undefined),
+  });
 
   const confirmClean = (type: "orphan" | "duplicate" | "expired", title: string) => {
     modal.confirm({
@@ -113,6 +128,18 @@ export default function ArticlesPage() {
   const rowSelection: TableRowSelection<Article> = {
     selectedRowKeys,
     onChange: setSelectedRowKeys,
+  };
+  const renderExtractionStatus = (value?: string) => {
+    const colorMap: Record<string, string> = {
+      pending: "default",
+      processing: "processing",
+      extracted: "success",
+      not_activity: "default",
+      failed: "error",
+      fallback_required: "warning",
+    };
+    const status = value || "pending";
+    return <Tag color={colorMap[status] || "default"}>{status}</Tag>;
   };
 
   const columns: ColumnsType<Article> = [
@@ -136,15 +163,26 @@ export default function ArticlesPage() {
       title: "活动抽取",
       dataIndex: "activity_extraction_status",
       width: 130,
-      render: (value) => <Tag>{value || "pending"}</Tag>,
+      render: renderExtractionStatus,
     },
     {
       title: "操作",
-      width: 90,
+      width: 150,
       render: (_, record) => (
-        <Popconfirm title="删除这篇文章？" onConfirm={() => remove.mutate(record.id)}>
-          <Button danger type="text" icon={<DeleteOutlined />} />
-        </Popconfirm>
+        <Space size={4}>
+          <Button
+            type="text"
+            icon={<ThunderboltOutlined />}
+            loading={extractingArticleId === record.id && extractActivity.isPending}
+            disabled={record.activity_extraction_status === "processing"}
+            onClick={() => extractActivity.mutate(record.id)}
+          >
+            抽取
+          </Button>
+          <Popconfirm title="删除这篇文章？" onConfirm={() => remove.mutate(record.id)}>
+            <Button danger type="text" icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -242,8 +280,14 @@ export default function ArticlesPage() {
             current: page,
             pageSize,
             total: query.data?.total || 0,
-            onChange: setPage,
-            showSizeChanger: false,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 篇文章`,
+            pageSizeOptions: [10, 20, 50, 100],
+            onChange: (nextPage, nextPageSize) => {
+              setPage(nextPage);
+              setPageSize(nextPageSize);
+              setSelectedRowKeys([]);
+            },
           }}
         />
       </Card>

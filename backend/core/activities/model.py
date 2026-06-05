@@ -1,29 +1,35 @@
-from datetime import datetime
-from typing import Optional
+from __future__ import annotations
+
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
 class Activity(BaseModel):
-    id: Optional[str] = None
+    id: str | None = None
     article_id: str = ""
-    source_wechat_account_id: Optional[str] = None
+    extraction_run_id: str | None = None
+    source_wechat_account_id: str | None = None
     article_url: str = ""
 
     title: str = ""
-    original_title: str = ""
-    registration_time_text: str = ""
-    registration_method: str = ""
+    summary: str = ""
     event_time_text: str = ""
-    event_fee: str = "无"
-    audience: str = "无"
-    status: str = "active"
-    extraction_status: str = "extracted"
-    fallback_reason: Optional[str] = None
-    confidence: Optional[float] = None
-    extracted_by: str = "llm"
-    extraction_model: Optional[str] = None
-    extraction_raw: dict = Field(default_factory=dict)
-    reviewed_at: Optional[str] = None
+    start_at: str | None = None
+    end_at: str | None = None
+    event_status: str = "unknown"
+    location_text: str = ""
+    registration_text: str = ""
+    registration_method: str = "unknown"
+    registration_url: str = ""
+    qr_image_urls: list[str] = Field(default_factory=list)
+    fee_text: str = ""
+    audience: str = ""
+    review_status: str = "needs_review"
+    confidence: float | None = None
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    raw_activity: dict[str, Any] = Field(default_factory=dict)
 
-    created_at: Optional[str] = None   # ISO datetime string when stored in Supabase
-    updated_at: Optional[str] = None
+    created_at: str | None = None
+    updated_at: str | None = None

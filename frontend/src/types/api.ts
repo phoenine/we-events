@@ -47,20 +47,27 @@ export interface Article {
 export interface Activity {
   id: string;
   article_id: string;
+  extraction_run_id?: string;
   source_wechat_account_id?: string;
-  title: string;
-  original_title?: string;
-  registration_time_text?: string;
-  registration_method?: string;
-  event_time_text?: string;
-  event_fee?: string;
-  audience?: string;
   article_url?: string;
-  status?: string;
-  extraction_status?: string;
-  fallback_reason?: string;
+  title: string;
+  summary?: string;
+  event_time_text?: string;
+  start_at?: string;
+  end_at?: string;
+  event_status?: "upcoming" | "ongoing" | "ended" | "unknown";
+  location_text?: string;
+  registration_text?: string;
+  registration_method?: "qr_code" | "link" | "phone" | "wechat" | "onsite" | "none" | "unknown";
+  registration_url?: string;
+  qr_image_urls?: string[];
+  fee_text?: string;
+  audience?: string;
+  review_status?: "published" | "needs_review" | "rejected";
   confidence?: number;
-  extracted_by?: string;
+  evidence?: Array<Record<string, unknown>>;
+  warnings?: string[];
+  raw_activity?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
 }
