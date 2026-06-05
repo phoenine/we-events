@@ -5,7 +5,7 @@ from core.wechat_accounts import wechat_account_repo
 from core.wechat_accounts.collector import collect_wechat_account_articles
 from core.common.log import logger
 from core.common.runtime_settings import runtime_settings
-from core.common.utils import TaskQueue
+from core.jobs import TaskQueue
 
 
 def fetch_all_article():
@@ -14,8 +14,8 @@ def fetch_all_article():
     all_articles = []
     try:
         # 获取公众号列表（使用Supabase，同步接口）
-        mps = wechat_account_repo.sync_get_wechat_accounts()
-        for item in mps:
+        accounts = wechat_account_repo.sync_get_wechat_accounts()
+        for item in accounts:
             try:
                 result = collect_wechat_account_articles(
                     item,
@@ -83,14 +83,15 @@ def get_wechat_accounts(account_ids: Optional[List[str]] = None) -> Optional[Lis
     return wechat_account_repo.sync_get_wechat_accounts()
 
 
-def start_all_task():
-    # 开启自动同步未同步文章任务。公众号批量采集由 API/CLI 显式触发。
-    from jobs.fetch_no_article import start_sync_content
+def start_all_task() -> None:
+    """容器启动时的后台任务入口。
 
-    start_sync_content()
+    旧版这里会启动 RSS/补正文类定时任务，这些功能已经从当前产品方向中删除。
+    公众号采集目前通过后台 API 显式触发，后续如需给 Hermes/CLI 调用，应新增独立入口。
+    """
+    logger.info("自动后台采集调度未启用；请通过公众号采集 API 显式触发任务")
 
 
 if __name__ == "__main__":
     # do_job()
-    # start_all_task()
     pass

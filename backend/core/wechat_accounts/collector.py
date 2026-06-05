@@ -23,7 +23,7 @@ def collect_wechat_account_articles(
     """采集单个公众号文章并返回结果。"""
     faker_id = _account_value(account, "faker_id")
     wechat_account_id = _account_value(account, "id")
-    mp_name = _account_value(account, "mp_name") or _account_value(account, "name")
+    account_name = _account_value(account, "mp_name") or _account_value(account, "name")
 
     if not faker_id:
         raise ValueError("公众号缺少 faker_id, 无法采集")
@@ -38,8 +38,8 @@ def collect_wechat_account_articles(
     try:
         wx.get_Articles(
             faker_id,
-            Mps_id=wechat_account_id,
-            Mps_title=mp_name,
+            wechat_account_id=wechat_account_id,
+            wechat_account_name=account_name,
             CallBack=on_article,
             Over_CallBack=on_finish,
             start_page=start_page,
@@ -48,12 +48,12 @@ def collect_wechat_account_articles(
             Gather_Content=gather_content,
         )
     except Exception as e:
-        logger.error(f"采集公众号[{mp_name or wechat_account_id}]失败: {e}")
+        logger.error(f"采集公众号[{account_name or wechat_account_id}]失败: {e}")
         raise
 
     return {
         "wechat_account_id": wechat_account_id,
-        "wechat_account_name": mp_name,
+        "wechat_account_name": account_name,
         "articles": wx.articles,
         "count": wx.all_count(),
     }

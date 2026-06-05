@@ -5,7 +5,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 from core.common.app_settings import settings
-from core.common.file import FileCrypto
+from driver.session.crypto import FileCrypto
 
 
 class KeyStore:

@@ -16,6 +16,15 @@ async def init_user():
     password: str = os.getenv("PASSWORD", "admin@123")
     user_id: str | None = None
 
+    def _extract_existing_user_id(page) -> str | None:
+        users = getattr(page, "users", None) or page or []
+        for user in users:
+            if getattr(user, "email", None) == username:
+                return str(getattr(user, "id", "") or "") or None
+            if isinstance(user, dict) and user.get("email") == username:
+                return str(user.get("id") or "") or None
+        return None
+
     try:
         result = await auth_manager.sign_up(
             email=username,
@@ -32,11 +41,13 @@ async def init_user():
             logger.info(f"Supabase Auth 中已存在用户：{username}，跳过创建")
             try:
                 service_client = auth_manager.get_client(use_service=True)
-                page = service_client.auth.admin.list_users()
-                users = getattr(page, "users", None) or []
-                for user in users:
-                    if getattr(user, "email", None) == username:
-                        user_id = str(getattr(user, "id", "") or "") or None
+                for page_no in range(1, 20):
+                    page = service_client.auth.admin.list_users(
+                        page=page_no,
+                        per_page=100,
+                    )
+                    user_id = _extract_existing_user_id(page)
+                    if user_id:
                         break
             except Exception as lookup_err:
                 logger.warning(f"查询已存在管理员用户失败: {lookup_err}")

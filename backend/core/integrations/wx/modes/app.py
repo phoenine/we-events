@@ -13,7 +13,7 @@ from core.common.log import logger
 from core.integrations.wx.base import WxGather
 
 
-class MpsAppMsg(WxGather):
+class WechatAccountAppMsg(WxGather):
     """公众号文章抓取（APP 浏览器模式）。
 
     主要能力：
@@ -68,8 +68,8 @@ class MpsAppMsg(WxGather):
     def get_Articles(
         self,
         faker_id: str = None,
-        Mps_id: str = None,
-        Mps_title: str = "",
+        wechat_account_id: str = None,
+        wechat_account_name: str = "",
         CallBack=None,
         start_page: int = 0,
         MaxPage: int = 1,
@@ -81,13 +81,13 @@ class MpsAppMsg(WxGather):
         """分页拉取公众号发布列表（/cgi-bin/appmsgpublish），可选抓取正文。"""
 
         # 初始化会话上下文（cookie/UA/headers/session），不在此处派生 token
-        self.Start(wechat_account_id=Mps_id)
+        self.Start(wechat_account_id=wechat_account_id)
 
         # 允许通过环境变量/父类开关覆盖
         if getattr(self, "Gather_Content", False):
             Gather_Content = True
 
-        logger.info(f"APP浏览器模式,是否采集[{Mps_title}]内容：{Gather_Content}")
+        logger.info(f"APP浏览器模式,是否采集[{wechat_account_name}]内容：{Gather_Content}")
 
         url = "https://mp.weixin.qq.com/cgi-bin/appmsgpublish"
         session = self.session
@@ -197,15 +197,15 @@ class MpsAppMsg(WxGather):
                                 item["content"] = ""
 
                             item["id"] = item.get("aid")
-                            item["wechat_account_id"] = Mps_id
+                            item["wechat_account_id"] = wechat_account_id
 
                             if CallBack is not None:
                                 super().FillBack(
                                     CallBack=CallBack,
                                     data=item,
                                     Ext_Data={
-                                        "mp_title": Mps_title,
-                                        "wechat_account_id": Mps_id,
+                                        "mp_title": wechat_account_name,
+                                        "wechat_account_id": wechat_account_id,
                                     },
                                 )
                                 page_processed += 1
@@ -213,7 +213,7 @@ class MpsAppMsg(WxGather):
                             continue
 
                 logger.info(
-                    f"[dedup-debug] mode=app wechat_account_id={Mps_id} page={i} "
+                    f"[dedup-debug] mode=app wechat_account_id={wechat_account_id} page={i} "
                     f"candidates={page_candidates} skip_existing={page_skip_existing} "
                     f"processed={page_processed} gather_content={Gather_Content}"
                 )
@@ -227,7 +227,7 @@ class MpsAppMsg(WxGather):
                 return
             finally:
                 super().Item_Over(
-                    item={"wechat_account_id": Mps_id, "wechat_account_name": Mps_title},
+                    item={"wechat_account_id": wechat_account_id, "wechat_account_name": wechat_account_name},
                     CallBack=Item_Over_CallBack,
                 )
 

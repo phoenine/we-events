@@ -15,7 +15,7 @@ from apis.activities import router as activities_router
 from core.common.app_settings import settings
 from core.common.log import configure_logger
 from core.common.base import VERSION, API_BASE
-from core.common.utils import TaskQueue
+from core.jobs import TaskQueue
 
 configure_logger(level=settings.log_level, log_file=settings.log_file)
 
