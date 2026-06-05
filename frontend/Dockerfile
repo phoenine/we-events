@@ -1,9 +1,11 @@
 FROM node:22.13-alpine AS build
+ENV CI=true
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml ./
-RUN npm install -g pnpm@11.5.1 && pnpm install --frozen-lockfile
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN npm install -g pnpm@11.5.1 \
+    && pnpm install --frozen-lockfile
 
 COPY . .
 ENV NODE_OPTIONS=--max-old-space-size=2048
