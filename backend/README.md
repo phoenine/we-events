@@ -13,7 +13,7 @@
 
 ## 2. 技术栈
 
-- Python 3.13（Docker 镜像内使用 3.13.1）
+- Python 3.12+（Docker 镜像使用 `python:3.12-slim-bookworm`）
 - FastAPI + Uvicorn
 - Supabase（Auth / Database / Storage）
 - Playwright（公众号相关抓取流程）
@@ -40,7 +40,7 @@ backend/
 
 ### 4.1 系统依赖
 
-- 安装 Python 3.13
+- 安装 Python 3.12+
 - 安装浏览器依赖（Playwright 运行需要）
 
 ### 4.2 Python 依赖
@@ -94,6 +94,8 @@ python main.py -job True -init True
 python main.py -job True -init True
 ```
 
+根目录 `docker-compose.yaml` 默认将 `ENABLE_JOB` 设为 `false`。当前阶段公众号采集由 API 显式触发，不再启动旧 cron/RSS 类后台任务。
+
 ## 6. API 文档
 
 服务启动后可访问：
@@ -118,7 +120,7 @@ python main.py -job True -init True
 ## 8. 日志与任务
 
 - 日志统一走 `core.common.log`（Loguru）
-- 应用启动时会拉起 `core.jobs.TaskQueue`
+- `core.jobs.TaskQueue` 用于显式触发的后台采集任务
 - 公众号文章采集由 API/CLI 显式触发，当前阶段不保留 cron 定时任务
 
 ## 9. 常见开发命令
