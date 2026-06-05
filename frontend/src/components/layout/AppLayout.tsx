@@ -21,6 +21,7 @@ import { useAuthStore } from "@/store/authStore";
 const { Sider, Header, Content } = Layout;
 
 const baseMenuItems: MenuProps["items"] = [
+  { key: "/activities", icon: <CalendarOutlined />, label: <Link to="/activities">活动</Link> },
   { key: "/articles", icon: <FileTextOutlined />, label: <Link to="/articles">文章</Link> },
   {
     key: "/wechat-accounts",
@@ -32,7 +33,6 @@ const baseMenuItems: MenuProps["items"] = [
     icon: <AppstoreOutlined />,
     label: <Link to="/wechat-account-groups">公众号分组</Link>,
   },
-  { key: "/activities", icon: <CalendarOutlined />, label: <Link to="/activities">活动</Link> },
   { key: "/configs", icon: <SettingOutlined />, label: <Link to="/configs">配置</Link> },
 ];
 
@@ -64,7 +64,7 @@ export default function AppLayout() {
 
   const selectedKey = useMemo(() => {
     const match = menuItems?.find((item: any) => location.pathname.startsWith(item.key));
-    return match ? [String(match.key)] : ["/articles"];
+    return match ? [String(match.key)] : ["/activities"];
   }, [location.pathname]);
 
   const userMenu: MenuProps["items"] = [
