@@ -1,16 +1,15 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException, status
 from datetime import datetime, timezone
 from core.wechat_account_groups import wechat_account_group_repo
-from schemas import success_response, error_response, WeChatAccountGroupCreate
 from core.integrations.supabase.auth import get_current_user
 from core.common.log import logger
-
+from schemas import success_response, error_response, WeChatAccountGroupCreate
 
 router = APIRouter(prefix="/wechat-account-groups", tags=["公众号分组管理"])
 
 
 def _extract_wechat_account_ids(raw_mps: object) -> list[str]:
-    import json
 
     if raw_mps is None:
         return []
@@ -37,7 +36,6 @@ def _extract_wechat_account_ids(raw_mps: object) -> list[str]:
 
 
 def _to_api_group(group: dict, account_ids: list[str] | None = None) -> dict:
-    import json
 
     item = dict(group or {})
     item["intro"] = item.get("description") or ""
@@ -61,7 +59,13 @@ async def list_wechat_account_groups(
         items = []
         for group in groups:
             group_id = str((group or {}).get("id") or "")
-            account_ids = await wechat_account_group_repo.get_wechat_account_ids_by_group(group_id) if group_id else []
+            account_ids = (
+                await wechat_account_group_repo.get_wechat_account_ids_by_group(
+                    group_id
+                )
+                if group_id
+                else []
+            )
             items.append(_to_api_group(group, account_ids))
         return success_response(
             data={
@@ -73,7 +77,9 @@ async def list_wechat_account_groups(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_response(code=500, message=f"获取公众号分组列表失败: {str(e)}"),
+            detail=error_response(
+                code=500, message=f"获取公众号分组列表失败: {str(e)}"
+            ),
         )
 
 
@@ -102,7 +108,9 @@ async def create_wechat_account_group(
         account_ids = _extract_wechat_account_ids(group.wechat_account_ids)
         bound_rows = []
         if group_id:
-            bound_rows = await wechat_account_group_repo.replace_wechat_account_groups(group_id, account_ids)
+            bound_rows = await wechat_account_group_repo.replace_wechat_account_groups(
+                group_id, account_ids
+            )
         data = _to_api_group(new_group, account_ids)
         data["bound_wechat_account_count"] = len(bound_rows)
         return success_response(data=data)
@@ -117,7 +125,11 @@ async def create_wechat_account_group(
         )
 
 
-@router.get("/{group_id}", summary="获取单个公众号分组详情", description="根据ID获取公众号分组详情")
+@router.get(
+    "/{group_id}",
+    summary="获取单个公众号分组详情",
+    description="根据ID获取公众号分组详情",
+)
 async def get_wechat_account_group(
     group_id: str,
     _current_user: dict = Depends(get_current_user),
@@ -129,7 +141,9 @@ async def get_wechat_account_group(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=error_response(code=404, message="Tag not found"),
         )
-    account_ids = await wechat_account_group_repo.get_wechat_account_ids_by_group(group_id)
+    account_ids = await wechat_account_group_repo.get_wechat_account_ids_by_group(
+        group_id
+    )
     return success_response(data=_to_api_group(group, account_ids))
 
 
@@ -163,9 +177,13 @@ async def update_wechat_account_group(
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        updated_groups = await wechat_account_group_repo.update_group(group_id, update_data)
+        updated_groups = await wechat_account_group_repo.update_group(
+            group_id, update_data
+        )
         account_ids = _extract_wechat_account_ids(group_data.wechat_account_ids)
-        bound_rows = await wechat_account_group_repo.replace_wechat_account_groups(group_id, account_ids)
+        bound_rows = await wechat_account_group_repo.replace_wechat_account_groups(
+            group_id, account_ids
+        )
         if updated_groups:
             data = _to_api_group(updated_groups[0], account_ids)
             data["bound_wechat_account_count"] = len(bound_rows)

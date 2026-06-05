@@ -1,70 +1,78 @@
+from __future__ import annotations
+
 import threading
-import time
+from collections.abc import Callable
+from typing import Any
+
 from core.common.log import logger
 
 
 class ThreadManager(threading.Thread):
-    """多线程管理类，支持启动、停止和强制停止操作"""
+    """轻量托管线程包装。
 
-    def __init__(self, target=None, name=None, args=(), kwargs=None):
+    Python 无法安全地强制终止正在运行的线程。本包装仅提供：
+    - 一致的链式启动
+    - 协作用途的停止请求标志
+    - 异常捕获与诊断
+    - 请求停止时可选的等待完成
+    """
+
+    def __init__(
+        self,
+        target: Callable[..., Any] | None = None,
+        name: str | None = None,
+        args: tuple[Any, ...] = (),
+        kwargs: dict[str, Any] | None = None,
+        daemon: bool | None = None,
+    ) -> None:
+        super().__init__(name=name, daemon=daemon)
+        self._target_func = target
+        self._target_args = args
+        self._target_kwargs = kwargs or {}
+        self._stop_requested = threading.Event()
+        self.exception: BaseException | None = None
+
+    def start(self) -> None:
+        """如果线程尚未启动则启动。"""
+        if self.is_alive():
+            return None
+        super().start()
+        return None
+
+    def stop(self, timeout: float | None = None) -> bool:
+        """请求协作者停止并可选等待完成。
+
+        返回 True 表示线程已不再存活。目标函数必须显式检查 `stop_requested`
+        才能中断长时间运行的任务。
         """
-        初始化线程管理器
-        :param target: 线程执行的函数
-        :param name: 线程名称
-        :param args: 函数参数
-        :param kwargs: 函数关键字参数
+        self._stop_requested.set()
+        if timeout is not None and self.is_alive():
+            self.join(timeout=timeout)
+        return not self.is_alive()
+
+    def force_stop(self, timeout: float | None = None) -> bool:
+        """stop() 的兼容别名。
+
+        不会强制终止线程。保留此方法避免破坏旧的调用方，同时在代码中明确表明行为。
         """
-        super().__init__(target=target, name=name, args=args, kwargs=kwargs or {})
-        self._stop_event = threading.Event()  # 优雅停止标志
-        self._force_stop = False  # 强制停止标志
-        self._lock = threading.Lock()  # 线程安全锁
+        logger.warning("ThreadManager.force_stop() cannot kill Python threads; requesting stop")
+        return self.stop(timeout=timeout)
 
-    def start(self):
-        """启动线程"""
-        if not self.is_alive():
-            super().start()
-        return self
+    @property
+    def stop_requested(self) -> bool:
+        return self._stop_requested.is_set()
 
-    def stop(self):
-        """优雅停止线程，等待线程完成当前任务"""
-        with self._lock:
-            self._stop_event.set()
+    @property
+    def failed(self) -> bool:
+        return self.exception is not None
 
-    def force_stop(self):
-        """强制停止线程，不等待任务完成"""
-        with self._lock:
-            self._force_stop = True
-            self._stop_event.set()
-
-    def run(self):
-        """线程运行逻辑"""
+    def run(self) -> None:
         try:
-            # while not self._stop_event.is_set() and not self._force_stop:
-            if self._target:
-                self._target(*self._args, **self._kwargs)
-        except Exception as e:
-            logger.info(f"线程 {self.name} 发生异常: {e}")
+            if self._target_func is None:
+                return
+            self._target_func(*self._target_args, **self._target_kwargs)
+        except BaseException as e:
+            self.exception = e
+            logger.exception(f"线程 {self.name} 发生异常")
         finally:
             logger.info(f"线程 {self.name} 已停止")
-
-
-# 示例用法
-if __name__ == "__main__":
-
-    def example_task():
-        while True:
-            logger.info("线程运行中...")
-            time.sleep(1)
-
-    # 初始化并返回thread对象
-    thread = ThreadManager(target=example_task, name="示例线程")
-
-    # 启动线程
-    thread.start()
-
-    # 5秒后优雅停止
-    time.sleep(5)
-    thread.stop()
-
-    # 或者强制停止
-    # thread.force_stop()

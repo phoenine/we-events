@@ -17,7 +17,7 @@ async def list_configs(
     """获取配置项列表"""
     try:
         total = await config_store.count()
-        paginated_configs = await config_store.list(limit=limit, offset=offset)
+        paginated_configs = await config_store.fetch_all(limit=limit, offset=offset)
 
         return success_response(
             data={

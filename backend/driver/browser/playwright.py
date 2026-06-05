@@ -381,7 +381,7 @@ class PlaywrightController:
 
 
 def get_realistic_user_agent(mobile_mode: bool = False) -> str:
-    """Public UA helper.
+    """UA 公共辅助函数。
 
     目的：
     - 对外提供稳定的 User-Agent 生成接口。

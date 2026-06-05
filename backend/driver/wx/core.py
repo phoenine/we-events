@@ -64,7 +64,7 @@ class Wx:
             login_lock=self._login_lock,
         )
 
-        # SessionManager for session/cookie/token persistence and login-status sync
+        # SessionManager：会话/cookie/token 持久化与登录状态同步
         self._session = SessionManager(
             get_controller=lambda: self.controller,
             get_qr_url=lambda: self.wx_login_url,
@@ -258,10 +258,10 @@ class Wx:
             }
 
     def is_logged_in(self) -> bool:
-        """Canonical login check.
+        """统一登录状态检查。
 
-        We treat `LoginState.SUCCESS` as the only logged-in terminal state.
-        Avoid using legacy `driver.success.getStatus`.
+        仅将 `LoginState.SUCCESS` 视为已登录的终态。
+        避免使用旧版 `driver.success.getStatus`。
         """
         with self._login_lock:
             return self.state == LoginState.SUCCESS

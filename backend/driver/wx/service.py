@@ -587,7 +587,7 @@ def _get_service() -> WxService:
 
 
 # --------------------------
-# Module-level helpers (thin wrappers)
+# 模块级薄封装助手函数
 # --------------------------
 
 # NOTE: 以下为模块级薄封装，方便直接调用 WxService 实例方法

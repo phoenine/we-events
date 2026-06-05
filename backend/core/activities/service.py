@@ -9,7 +9,7 @@ from core.common.log import logger
 async def upsert_activity_from_article(
     article: Dict[str, Any], analysis: Dict[str, Any]
 ) -> Tuple[Dict[str, Any], bool]:
-    """Create or update the activity extracted from one article."""
+    """从文章中提取的活动信息进行创建或更新。"""
     existing_activities = await activity_repo.get_activities(
         article_id=article["id"], limit=1, offset=0
     )

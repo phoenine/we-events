@@ -3,13 +3,13 @@ from core.integrations.supabase.auth import get_current_user
 from core.articles import article_repo
 from core.wechat_accounts import wechat_account_repo
 from core.integrations.supabase.storage import supabase_storage_articles
-from schemas import success_response, error_response, format_search_kw
 from core.common.log import logger
+from schemas import success_response, error_response, format_search_kw
 from typing import Optional, List, Dict, Any, cast
 import re
 from datetime import datetime, timedelta, timezone
 
-router = APIRouter(prefix=f"/articles", tags=["文章管理"])
+router = APIRouter(prefix="/articles", tags=["文章管理"])
 
 
 def _extract_storage_paths_from_content(content: str) -> List[str]:

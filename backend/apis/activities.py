@@ -13,11 +13,11 @@ from core.articles import article_repo
 from core.activities import activity_repo
 from core.activities.agent import analyze_article_for_activity
 from core.activities.service import upsert_activity_from_article
-from schemas import success_response, error_response, ActivityCreate, ActivityUpdate
 from core.common.log import logger
-
+from schemas import success_response, error_response, ActivityCreate, ActivityUpdate
 
 router = APIRouter(prefix="/activities", tags=["活动"])
+
 
 def _get_date_range(scope: str):
     now = datetime.now(timezone.utc)
@@ -39,7 +39,7 @@ async def fetch_activities(
     payload: Optional[Dict[str, Any]] = Body(None),
     _current_user: dict = Depends(get_current_user),
 ):
-    # Normalize scope/limit from JSON body if provided (supports {"scope":"week","limit":100})
+    # 如果请求体提供了 scope/limit，则从 JSON body 中标准化（支持 {"scope":"week","limit":100}）
     if payload:
         body_scope = (payload.get("scope") or "").strip().lower()
         if body_scope in {"today", "day", "week", "all"}:
@@ -93,7 +93,9 @@ async def fetch_activities(
             )
 
             if not analysis.get("is_event", False):
-                logger.info(f"[activities.fetch] skip non-activity article_id={art['id']}")
+                logger.info(
+                    f"[activities.fetch] skip non-activity article_id={art['id']}"
+                )
                 await article_repo.update_article(
                     art["id"], {"activity_extraction_status": "not_activity"}
                 )
@@ -150,7 +152,8 @@ async def create_activity(
 
         activity_data = {
             "article_id": payload.article_id,
-            "source_wechat_account_id": payload.source_wechat_account_id or art.get("wechat_account_id"),
+            "source_wechat_account_id": payload.source_wechat_account_id
+            or art.get("wechat_account_id"),
             "title": payload.title or art.get("title") or "",
             "original_title": payload.original_title or art.get("title") or "",
             "registration_time_text": payload.registration_time_text or "",

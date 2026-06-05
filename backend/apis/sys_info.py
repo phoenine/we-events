@@ -2,14 +2,18 @@ import platform
 import time
 import sys
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import Dict, Any
-from core.integrations.supabase.auth import get_current_user
 from schemas import success_response, error_response, API_VERSION
+from core.integrations.supabase.auth import get_current_user
 from core.common.app_settings import settings
+from core.common.base import VERSION as CORE_VERSION, LATEST_VERSION
+from core.common.resource import get_system_resources
+from core.articles.lax import laxArticle
 from core.jobs import TaskQueue
-from driver.wx.service import get_state as wx_get_state, get_session_info as wx_get_session_info
+from driver.wx.service import (
+    get_state as wx_get_state,
+    get_session_info as wx_get_session_info,
+)
 from driver.wx.state import LoginState
-
 
 router = APIRouter(prefix="/sys", tags=["系统信息"])
 
@@ -18,10 +22,8 @@ _START_TIME = time.time()
 
 
 @router.get("/base_info", summary="常规信息")
-async def get_base_info() -> Dict[str, Any]:
+async def get_base_info():
     try:
-        from core.common.base import VERSION as CORE_VERSION, LATEST_VERSION
-
         base_info = {
             "api_version": API_VERSION,
             "core_version": CORE_VERSION,
@@ -35,16 +37,13 @@ async def get_base_info() -> Dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=50001, message=f"获取信息失败: {str(e)}"),
-        )
-
-
-from core.common.resource import get_system_resources
+        ) from e
 
 
 @router.get("/resources", summary="获取系统资源使用情况")
 async def system_resources(
     current_user: dict = Depends(get_current_user),
-) -> Dict[str, Any]:
+):
     """获取系统资源使用情况
 
     Returns:
@@ -61,19 +60,13 @@ async def system_resources(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=50002, message=f"获取系统资源失败: {str(e)}"),
-        )
+        ) from e
 
-
-from core.articles.lax import laxArticle
-from schemas import API_VERSION
-from core.common.base import VERSION as CORE_VERSION, LATEST_VERSION
-
-# TODO : 后面优化这个接口，改成异步的
 
 @router.get("/info", summary="获取系统信息")
-def get_system_info(
+async def get_system_info(
     current_user: dict = Depends(get_current_user),
-) -> Dict[str, Any]:
+):
     """获取当前系统的各种信息
 
     Returns:
@@ -84,8 +77,6 @@ def get_system_info(
         - system: 系统详细信息
     """
     try:
-
-        # 获取系统信息
         system_info = {
             "os": {
                 "name": platform.system(),
@@ -104,10 +95,7 @@ def get_system_info(
             "latest_version": LATEST_VERSION,
             "need_update": CORE_VERSION != LATEST_VERSION,
             "wx": {
-                # 是否已登录公众号后台（基于 Wx/SessionManager 的统一状态机）
                 "login": wx_get_state().get("state") == LoginState.SUCCESS.value,
-
-                # 当前公众号会话信息（来源：Store/SessionManager）
                 "session": (
                     wx_get_session_info().get("session")
                     if isinstance(wx_get_session_info(), dict)
@@ -122,4 +110,4 @@ def get_system_info(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=50001, message=f"获取系统信息失败: {str(e)}"),
-        )
+        ) from e

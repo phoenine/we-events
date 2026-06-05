@@ -37,7 +37,6 @@ def laxArticle():
     info.mp_all_count = wechat_account_repo.sync_count_wechat_accounts()
 
     return info.__dict__
-    pass
 
 
 # ARTICLE_INFO = laxArticle()

@@ -9,12 +9,12 @@ class BaseResponse(BaseModel):
     data: Optional[Any] = None
 
 
-def success_response(data=None, message="success"):
+def success_response(data=None, message="success") -> dict[str, Any]:
     # 快速构造成功响应
     return {"code": 0, "message": message, "data": data}
 
 
-def error_response(code: int, message: str, data=None):
+def error_response(code: int, message: str, data=None) -> dict[str, Any]:
     # 快速构造错误响应
     return {"code": code, "message": message, "data": data}
 

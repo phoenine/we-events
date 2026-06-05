@@ -1,4 +1,7 @@
 import time
+import threading
+import base64
+import asyncio
 from datetime import datetime, timezone
 from typing import List, Dict, Any, cast, Optional
 import json
@@ -14,11 +17,10 @@ from core.integrations.supabase.auth import get_current_user
 from core.wechat_accounts import wechat_account_repo
 from core.wechat_accounts.collector import collect_wechat_account_articles
 from core.integrations.wx import search_Biz
-from schemas import success_response, error_response
 from core.common.log import logger
 from core.common.runtime_settings import runtime_settings
+from schemas import success_response, error_response
 from jobs.article import UpdateArticle
-
 
 router = APIRouter(prefix="/wechat-accounts", tags=["公众号管理"])
 
@@ -28,7 +30,9 @@ def _wechat_account_to_api(account: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": account.get("id"),
         "mp_name": account.get("mp_name") or account.get("name"),
-        "mp_cover": account.get("mp_cover") or account.get("cover") or account.get("logo_url"),
+        "mp_cover": account.get("mp_cover")
+        or account.get("cover")
+        or account.get("logo_url"),
         "mp_intro": account.get("mp_intro") or account.get("description"),
         "status": account.get("status"),
         "created_at": account.get("created_at"),
@@ -60,7 +64,7 @@ async def search_mp(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(
                 code=50001,
-                message=f"搜索公众号失败,请重新扫码授权！",
+                message="搜索公众号失败,请重新扫码授权！",
             ),
         )
 
@@ -88,10 +92,7 @@ async def list_wechat_accounts(
 
         return success_response(
             {
-                "list": [
-                    _wechat_account_to_api(account)
-                    for account in accounts
-                ],
+                "list": [_wechat_account_to_api(account) for account in accounts],
                 "page": {"limit": limit, "offset": offset, "total": total},
                 "total": total,
             }
@@ -146,6 +147,7 @@ async def sync_wechat_account_articles(
                     data={"time_span": time_span},
                 ),
             )
+
         def UpArt(mp_data):
             try:
                 collect_wechat_account_articles(
@@ -156,8 +158,6 @@ async def sync_wechat_account_articles(
                 )
             except Exception as e:
                 logger.error(f"更新公众号文章线程异常: {e}")
-
-        import threading
 
         threading.Thread(target=UpArt, args=(mp,)).start()
 
@@ -184,7 +184,9 @@ async def get_wechat_account(
         # 2) 微信 fakeid（如 MzI3NDQ0MTI2OQ==）
         mp = await wechat_account_repo.get_wechat_account_by_id(wechat_account_id)
         if not mp:
-            mp = await wechat_account_repo.get_wechat_account_by_faker_id(wechat_account_id)
+            mp = await wechat_account_repo.get_wechat_account_by_faker_id(
+                wechat_account_id
+            )
         if not mp:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -207,12 +209,9 @@ async def get_wechat_account_by_article(
 ):
     try:
         from driver.wx.service import fetch_article, get_state as wx_get_state
-        import asyncio
 
         user_id = (_current_user or {}).get("id")
-        logger.info(
-            f"[wx-by-article] start user_id={user_id} url={url}"
-        )
+        logger.info(f"[wx-by-article] start user_id={user_id} url={url}")
 
         # 在后台线程中执行同步的 Playwright 调用，避免在事件循环里直接使用 Sync API
         loop = asyncio.get_running_loop()
@@ -262,7 +261,9 @@ async def get_wechat_account_by_article(
                     "[wx-by-article] success_payload_preview "
                     + json.dumps(
                         {
-                            "mp_info": mp_info if isinstance(mp_info, dict) else mp_info,
+                            "mp_info": (
+                                mp_info if isinstance(mp_info, dict) else mp_info
+                            ),
                             "title": article_data.get("title"),
                             "url": article_data.get("url"),
                         },
@@ -298,7 +299,6 @@ async def create_wechat_account(
     _current_user: dict = Depends(get_current_user),
 ):
     try:
-        import base64
 
         if not wechat_account_id:
             raise HTTPException(
@@ -320,7 +320,9 @@ async def create_wechat_account(
         now_iso = now.isoformat()
 
         # 检查公众号是否已存在（按 faker_id / wechat_account_id）
-        existing_account_raw = await wechat_account_repo.get_wechat_account_by_faker_id(wechat_account_id)
+        existing_account_raw = await wechat_account_repo.get_wechat_account_by_faker_id(
+            wechat_account_id
+        )
         existing_account: Dict[str, Any] = cast(Dict[str, Any], existing_account_raw)
 
         if existing_account:
@@ -333,7 +335,9 @@ async def create_wechat_account(
             if cover_path:
                 update_data["logo_url"] = cover_path
 
-            await wechat_account_repo.update_wechat_account(existing_account["id"], update_data)
+            await wechat_account_repo.update_wechat_account(
+                existing_account["id"], update_data
+            )
             account = {**existing_account, **update_data}
         else:
             # 创建新的公众号账号记录
@@ -353,7 +357,9 @@ async def create_wechat_account(
         # 文章抓取改为由用户手动点击“刷新”触发，以降低微信风控概率。
 
         return success_response(
-            _wechat_account_to_api({**account, "faker_id": account.get("faker_id", wechat_account_id)})
+            _wechat_account_to_api(
+                {**account, "faker_id": account.get("faker_id", wechat_account_id)}
+            )
         )
     except HTTPException:
         # 直接透传上面主动抛出的 HTTPException

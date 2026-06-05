@@ -17,7 +17,7 @@ from driver.wx.service import (
 )
 
 
-router = APIRouter(prefix=f"/auth", tags=["认证"])
+router = APIRouter(prefix="/auth", tags=["认证"])
 
 # 兼容：原先把 session_id 写到 WX_API.current_session_id 上。
 # 现在改为按用户保存，避免并发请求串号。

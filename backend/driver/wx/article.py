@@ -478,9 +478,9 @@ class WXArticleFetcher:
             pass
 
     def clean_article_content(self, html_content: str):
-        from core.articles.html_tools import htmltools
+        from core.articles.html_tools import clean_html
 
-        return htmltools.clean_html(
+        return clean_html(
             str(html_content),
             remove_selectors=["link", "head", "script"],
             remove_attributes=[

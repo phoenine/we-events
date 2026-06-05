@@ -47,7 +47,7 @@ class RuntimeSettings:
     async def get_bool(self, key: str, default: bool) -> bool:
         value = await self.get(key, default)
         if isinstance(value, bool):
-            return value
+            return bool(value)
         if isinstance(value, str):
             return value.strip().lower() in ("1", "true", "yes", "on")
         return bool(value)
@@ -55,10 +55,10 @@ class RuntimeSettings:
     def get_sync(self, key: str, default: Any = None) -> Any:
         return run_sync(self.get(key, default))
 
-    def get_int_sync(self, key: str, default: int) -> int:
+    def get_int_sync(self, key: str, default: int):
         return run_sync(self.get_int(key, default))
 
-    def get_bool_sync(self, key: str, default: bool) -> bool:
+    def get_bool_sync(self, key: str, default: bool):
         return run_sync(self.get_bool(key, default))
 
 
