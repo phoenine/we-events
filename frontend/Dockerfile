@@ -1,9 +1,9 @@
-FROM node:20-alpine AS build
+FROM node:22.13-alpine AS build
 
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml ./
-RUN corepack enable && pnpm install --frozen-lockfile
+RUN npm install -g pnpm@11.5.1 && pnpm install --frozen-lockfile
 
 COPY . .
 ENV NODE_OPTIONS=--max-old-space-size=2048
