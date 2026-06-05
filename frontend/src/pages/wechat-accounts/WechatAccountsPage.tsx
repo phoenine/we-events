@@ -22,12 +22,12 @@ import type { WechatAccount } from "@/types/api";
 
 export default function WechatAccountsPage() {
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [kw, setKw] = useState("");
   const queryClient = useQueryClient();
   const { message } = App.useApp();
-  const pageSize = 20;
   const query = useQuery({
-    queryKey: ["wechat-accounts", page, kw],
+    queryKey: ["wechat-accounts", page, pageSize, kw],
     queryFn: () =>
       listWechatAccounts({ offset: (page - 1) * pageSize, limit: pageSize, kw }),
   });
@@ -143,8 +143,13 @@ export default function WechatAccountsPage() {
             current: page,
             pageSize,
             total: query.data?.total || 0,
-            onChange: setPage,
-            showSizeChanger: false,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 个公众号`,
+            pageSizeOptions: [10, 20, 50, 100],
+            onChange: (nextPage, nextPageSize) => {
+              setPage(nextPage);
+              setPageSize(nextPageSize);
+            },
           }}
         />
       </Card>

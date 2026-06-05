@@ -1,48 +1,53 @@
-from typing import Optional, Any
+from __future__ import annotations
+
+from typing import Any
+
 from pydantic import BaseModel, Field
-from datetime import datetime
 
 
 class ActivityCreate(BaseModel):
     article_id: str
-    source_wechat_account_id: Optional[str] = None
-    article_url: Optional[str] = None
+    extraction_run_id: str | None = None
+    source_wechat_account_id: str | None = None
+    article_url: str | None = None
     title: str = ""
-    original_title: str = ""
-    registration_time_text: str = ""
-    registration_method: Optional[str] = None
+    summary: str = ""
     event_time_text: str = ""
-    event_fee: str = "无"
-    audience: str = "无"
-    status: str = "active"
-    extraction_status: str = "reviewed"
-    fallback_reason: Optional[str] = None
-    confidence: Optional[float] = None
-    extracted_by: str = "manual"
-    extraction_model: Optional[str] = None
-    extraction_raw: dict[str, Any] = Field(default_factory=dict)
-    reviewed_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    start_at: str | None = None
+    end_at: str | None = None
+    event_status: str = "unknown"
+    location_text: str = ""
+    registration_text: str = ""
+    registration_method: str = "unknown"
+    registration_url: str = ""
+    qr_image_urls: list[str] = Field(default_factory=list)
+    fee_text: str = ""
+    audience: str = ""
+    review_status: str = "needs_review"
+    confidence: float | None = None
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    raw_activity: dict[str, Any] = Field(default_factory=dict)
 
 
 class ActivityUpdate(BaseModel):
-    source_wechat_account_id: Optional[str] = None
-    article_url: Optional[str] = None
-    title: Optional[str] = None
-    original_title: Optional[str] = None
-    registration_time_text: Optional[str] = None
-    registration_method: Optional[str] = None
-    event_time_text: Optional[str] = None
-    event_fee: Optional[str] = None
-    audience: Optional[str] = None
-    status: Optional[str] = None
-    extraction_status: Optional[str] = None
-    fallback_reason: Optional[str] = None
-    confidence: Optional[float] = None
-    extracted_by: Optional[str] = None
-    extraction_model: Optional[str] = None
-    extraction_raw: Optional[dict[str, Any]] = None
-    reviewed_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    source_wechat_account_id: str | None = None
+    article_url: str | None = None
+    title: str | None = None
+    summary: str | None = None
+    event_time_text: str | None = None
+    start_at: str | None = None
+    end_at: str | None = None
+    event_status: str | None = None
+    location_text: str | None = None
+    registration_text: str | None = None
+    registration_method: str | None = None
+    registration_url: str | None = None
+    qr_image_urls: list[str] | None = None
+    fee_text: str | None = None
+    audience: str | None = None
+    review_status: str | None = None
+    confidence: float | None = None
+    evidence: list[dict[str, Any]] | None = None
+    warnings: list[str] | None = None
+    raw_activity: dict[str, Any] | None = None
