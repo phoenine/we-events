@@ -12,22 +12,10 @@ from driver.session.manager import SessionManager
 from driver.wx.schemas import WxMpSession
 from core.common.log import logger
 
-
 # ==================== Hooks 类型定义 ====================
 
 
 class WxHooks(TypedDict, total=False):
-    """wx.py 外部依赖钩子（可插拔）。
-
-    说明：
-    - wx.py 作为核心驱动，应尽量避免直接依赖外部基础设施（DB/Storage）。
-    - 通过 hooks 将这些 best-effort 行为变为可插拔回调：
-      - 生产由 wx_service 注入
-      - 测试/本地可不注入（走默认降级路径）
-
-    约定：
-    - hooks 任何异常都应被吞掉，不影响主流程。
-    """
 
     # 状态变化通知：可用于写 DB / 观测上报等
     on_state_change: Callable[[str, Optional[str], Optional[str], Optional[int]], None]
@@ -425,9 +413,10 @@ class Wx:
         mutex_held_by_me = False
         lock_held_by_me = False
 
-        # Phase0: 若 GetCode 已预先抢占互斥，则这里不重复抢占
+        # Phase0: 若 GetCode 已预先抢占互斥，则这里不重复抢占，但 wxLogin
+        # 仍然负责在 finally 中释放这次登录任务持有的锁。
         if mutex_acquired:
-            mutex_held_by_me = False
+            mutex_held_by_me = True
         else:
             if self.check_lock():
                 logger.warning("微信公众平台登录脚本正在运行，请勿重复运行")
@@ -438,7 +427,7 @@ class Wx:
                 return (False, False, False)
 
         if prelocked:
-            lock_held_by_me = False
+            lock_held_by_me = True
         else:
             ok = self.set_lock()
             lock_held_by_me = True if ok else False
@@ -509,7 +498,9 @@ class Wx:
         logger.info(f"[wx-qr] img src={src}")
         img_bytes = qrcode.screenshot()
         head = img_bytes[:8].hex() if img_bytes else ""
-        logger.info(f"[wx-qr] captured selector={qr_tag} bytes={len(img_bytes or b'')} head={head}")
+        logger.info(
+            f"[wx-qr] captured selector={qr_tag} bytes={len(img_bytes or b'')} head={head}"
+        )
         try:
             os.makedirs("data/cache", exist_ok=True)
             ts = int(time.time() * 1000)
@@ -649,6 +640,7 @@ class Wx:
                 logger.error(traceback.format_exc())
             except Exception:
                 pass
+            self._set_qr_url(None)
             self.SESSION = None
             return self.SESSION
         finally:

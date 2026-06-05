@@ -10,7 +10,7 @@ from core.common.log import logger
 from core.integrations.wx.base import WxGather
 
 
-class MpsApi(WxGather):
+class WechatAccountApi(WxGather):
     """公众号文章抓取（API 获取模式）。
 
     继承 WxGather：
@@ -89,8 +89,8 @@ class MpsApi(WxGather):
     def get_Articles(
         self,
         faker_id: str = "",
-        Mps_id: str = "",
-        Mps_title: str = "",
+        wechat_account_id: str = "",
+        wechat_account_name: str = "",
         CallBack=None,
         start_page: int = 0,
         MaxPage: int = 999,
@@ -101,10 +101,10 @@ class MpsApi(WxGather):
     ):
         """分页拉取公众号文章列表，并可选抓取正文内容。
 
-        参数说明（保留历史命名）：
+        参数说明：
         - faker_id: 公众号 fakeid（用于 appmsg 接口）
-        - Mps_id: 本系统内公众号 id（透传给回调/落库）
-        - Mps_title: 公众号标题（仅用于日志/回调扩展信息）
+        - wechat_account_id: 本系统内公众号 id（透传给回调/落库）
+        - wechat_account_name: 公众号标题（仅用于日志/回调扩展信息）
         - CallBack: 单篇文章处理回调（每条 app_msg_list item 调用一次）
         - start_page: 起始页（从 0 开始）
         - MaxPage: 最大页数（按“页”计）
@@ -120,7 +120,7 @@ class MpsApi(WxGather):
         4) 处理频控/会话失效等错误码并退出循环。
         """
         # 1) 初始化会话上下文（cookie/UA/headers/session），不在此处派生 token
-        self.Start(wechat_account_id=Mps_id)
+        self.Start(wechat_account_id=wechat_account_id)
 
         # 2) appmsg 列表接口
         url = "https://mp.weixin.qq.com/cgi-bin/appmsg"
@@ -180,7 +180,7 @@ class MpsApi(WxGather):
 
             # 200013：频控（frequencey control）
             if ret == 200013:
-                self.Error(f"frequencey control, stop at {Mps_title or Mps_id}")
+                self.Error(f"frequencey control, stop at {wechat_account_name or wechat_account_id}")
                 return
 
             # 200003 或其他非 0：会话失效 / 异常状态
@@ -205,7 +205,7 @@ class MpsApi(WxGather):
                 for item in items:
                     try:
                         # 补齐 wechat_account_id（供回调与上层处理）
-                        item["wechat_account_id"] = Mps_id
+                        item["wechat_account_id"] = wechat_account_id
 
                         # 去重：防止同一文章重复采集/回调（aid/链接有时可能重复）
                         aid = str(item.get("aid") or "").strip()
@@ -228,7 +228,7 @@ class MpsApi(WxGather):
                         super().FillBack(
                             CallBack=CallBack,
                             data=item,
-                            Ext_Data={"mp_title": Mps_title},
+                            Ext_Data={"mp_title": wechat_account_name},
                         )
                         page_processed += 1
                     except Exception:
@@ -239,7 +239,7 @@ class MpsApi(WxGather):
                 super().Item_Over(item=i, CallBack=Item_Over_CallBack)
 
             logger.info(
-                f"[dedup-debug] mode=api wechat_account_id={Mps_id} page={i} "
+                f"[dedup-debug] mode=api wechat_account_id={wechat_account_id} page={i} "
                 f"candidates={page_candidates} skip_existing={page_skip_existing} "
                 f"processed={page_processed} gather_content={Gather_Content}"
             )

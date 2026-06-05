@@ -17,7 +17,6 @@
 - FastAPI + Uvicorn
 - Supabase（Auth / Database / Storage）
 - Playwright（公众号相关抓取流程）
-- APScheduler（定时任务）
 - Loguru（统一日志门面）
 
 ## 3. 目录结构
@@ -27,10 +26,11 @@ backend/
 ├── apis/                     # HTTP API 路由层
 ├── core/                     # 领域逻辑与基础能力
 │   ├── integrations/         # Supabase/Wx 等基础设施适配
-│   ├── common/               # 配置、日志、任务队列等通用组件
+│   ├── common/               # 配置、日志等通用组件
+│   ├── jobs/                 # 后台任务队列
 │   ├── articles|wechat_accounts|... # 各业务领域仓储与模型
 ├── driver/                   # 浏览器与会话驱动层（Playwright/Wx）
-├── jobs/                     # 定时任务与异步任务编排
+├── jobs/                     # 公众号采集任务编排
 ├── main.py                   # 进程启动入口
 ├── web.py                    # FastAPI 应用入口
 └── .env                      # 运行环境变量配置
@@ -118,8 +118,8 @@ python main.py -job True -init True
 ## 8. 日志与任务
 
 - 日志统一走 `core.common.log`（Loguru）
-- 应用启动时会拉起任务队列（`TaskQueue`）
-- 定时任务由 `jobs/` + `APScheduler` 驱动
+- 应用启动时会拉起 `core.jobs.TaskQueue`
+- 公众号文章采集由 API/CLI 显式触发，当前阶段不保留 cron 定时任务
 
 ## 9. 常见开发命令
 

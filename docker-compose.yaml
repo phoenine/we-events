@@ -3,26 +3,29 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
     environment:
-      # Supabase PostgreSQL连接配置
-      - SUPABASE_URL=http://host.docker.internal:8000
-      - DB=postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-postgres}?sslmode=${DB_SSLMODE:-disable}
-      # 应用配置
-      - TZ=Asia/Shanghai
-      - APP_NAME=we-mp-rss
-      - SERVER_NAME=we-mp-rss
-      - WEB_NAME=WeRSS微信活动订阅助手
-      - SECRET_KEY=${SECRET_KEY_BASE:-UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq}
-      - USERNAME=${USERNAME}
-      - PASSWORD=${PASSWORD}
-      - ENABLE_JOB=true
-      - THREADS=4
-      - PORT=38001
-      - DEBUG=false
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:8000}
+      DB: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@${POSTGRES_HOST:-host.docker.internal}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-postgres}?sslmode=${DB_SSLMODE:-disable}
+      TZ: Asia/Shanghai
+      APP_NAME: wx-activity-subscription-assistant
+      SERVER_NAME: wx-activity-subscription-assistant
+      WEB_NAME: 微信活动订阅助手
+      SECRET_KEY: ${SECRET_KEY_BASE:-UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq}
+      USERNAME: ${USERNAME:-admin@example.com}
+      PASSWORD: ${PASSWORD:-admin@123}
+      ENABLE_JOB: ${ENABLE_JOB:-false}
+      THREADS: ${THREADS:-1}
+      PORT: 38001
+      DEBUG: ${DEBUG:-false}
+      BROWSER_TYPE: firefox
     ports:
       - "38001:38001"
     volumes:
       - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks:
       - default
@@ -37,11 +40,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        VITE_API_BASE_URL: http://localhost:38001/
     environment:
       - TZ=Asia/Shanghai
-      - VITE_API_BASE_URL=http://localhost:38001/
     ports:
       - "30000:30000"
     depends_on:

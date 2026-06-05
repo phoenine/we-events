@@ -1,56 +1,21 @@
-import http from './http'
+import http from "@/api/http";
+import type { CurrentUser } from "@/store/authStore";
 
-export interface UserInfo {
-  id: string
-  email: string
-  username: string
-  nickname: string
-  avatar: string
-  role: string
-  is_active: boolean
+export interface UpdateUserPayload {
+  username?: string;
+  nickname?: string;
+  email?: string;
+  is_active?: boolean;
 }
 
-export interface UpdateUserParams {
-  username?: string
-  nickname?: string
-  email?: string
-  avatar?: string
-  password?: string
-  is_active?: boolean
+export function getCurrentUser(): Promise<CurrentUser> {
+  return http.get("/wx/user");
 }
 
-export const getUserInfo = () => {
-  return http.get<{ code: number; data: UserInfo }>('/wx/user')
+export function updateUser(payload: UpdateUserPayload) {
+  return http.put("/wx/user", payload);
 }
 
-export const updateUserInfo = (data: UpdateUserParams) => {
-  return http.put<{ code: number; message: string }>('/wx/user', data)
-}
-
-export interface ChangePasswordParams {
-  old_password: string
-  new_password: string
-}
-
-export const changePassword = (data: ChangePasswordParams) => {
-  return http.put<{ code: number; message: string }>('/wx/user/password', data)
-}
-
-// 保持旧方法向后兼容
-export const changePasswordLegacy = (newPassword: string) => {
-  return updateUserInfo({ password: newPassword })
-}
-
-export const toggleUserStatus = (active: boolean) => {
-  return updateUserInfo({ is_active: active })
-}
-
-export const uploadAvatar = (file: File) => {
-  const formData = new FormData()
-  formData.append('file', file)
-  return http.post<{ code: number; data: { avatar: string } }>('/wx/user/avatar', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  })
+export function changePassword(payload: { old_password: string; new_password: string }) {
+  return http.put("/wx/user/password", payload);
 }

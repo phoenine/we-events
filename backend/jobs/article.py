@@ -30,6 +30,19 @@ ARTICLE_COLUMNS = {
 }
 
 
+def _normalize_epoch_seconds(value) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        epoch = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    # 微信列表接口和正文解析都应为秒级时间戳；这里兼容误传的毫秒。
+    if epoch > 10_000_000_000:
+        epoch = epoch // 1000
+    return epoch if epoch > 0 else None
+
+
 def _extract_object_path_from_storage_url(url: str) -> str:
     value = str(url or "").strip()
     if not value:
@@ -168,6 +181,14 @@ def _normalize_article_for_db(article: dict) -> dict:
     """将采集侧字段归一化到 articles 表字段。"""
     data = dict(article or {})
 
+    publish_time = (
+        _normalize_epoch_seconds(data.get("publish_time"))
+        or _normalize_epoch_seconds(data.get("create_time"))
+        or _normalize_epoch_seconds(data.get("update_time"))
+    )
+    if publish_time is not None:
+        data["publish_time"] = publish_time
+
     # 表外字段（采集上下文）不入库
     data.pop("images", None)
     data.pop("mp_info", None)
@@ -192,7 +213,6 @@ def _ensure_content_markdown(article: dict) -> dict:
 
 def UpdateArticle(art: dict, check_exist: bool = False):
     """更新文章"""
-    mps_count = 0
     if settings.debug:
         pass
     try:
@@ -210,7 +230,6 @@ def UpdateArticle(art: dict, check_exist: bool = False):
                     article_repo.sync_replace_article_images(article_id, image_mappings)
                 except Exception as e:
                     logger.warning(f"写入 article_images 映射失败 article_id={article_id}: {e}")
-            mps_count = mps_count + 1
             return True
     except Exception as e:
         logger.info(f"创建文章失败: {e}")

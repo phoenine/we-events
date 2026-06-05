@@ -162,7 +162,7 @@ async def sync_wechat_account_articles(
         threading.Thread(target=UpArt, args=(mp,)).start()
 
         return success_response(
-            {"time_span": time_span, "list": [], "total": 0, "mps": mp}
+            {"time_span": time_span, "list": [], "total": 0, "wechat_account": mp}
         )
     except HTTPException:
         raise
@@ -175,7 +175,7 @@ async def sync_wechat_account_articles(
 
 
 @router.get("/{wechat_account_id}", summary="获取公众号详情")
-async def get_mp(
+async def get_wechat_account(
     wechat_account_id: str,
 ):
     try:
@@ -202,7 +202,7 @@ async def get_mp(
 
 
 @router.post("/by_article", summary="通过文章链接获取公众号详情")
-async def get_mp_by_article(
+async def get_wechat_account_by_article(
     url: str = Query(..., min_length=1), _current_user: dict = Depends(get_current_user)
 ):
     try:
@@ -351,15 +351,6 @@ async def create_wechat_account(
 
         # 订阅添加只保存公众号信息，不自动触发采集。
         # 文章抓取改为由用户手动点击“刷新”触发，以降低微信风控概率。
-        # 在这里实现第一次添加时获取公众号文章
-        # if not existing_account:
-        #     max_page = await runtime_settings.get_int("max_page", 2)
-        #     TaskQueue.add_task(
-        #         collect_wechat_account_articles,
-        #         account,
-        #         on_article=UpdateArticle,
-        #         max_page=max_page,
-        #     )
 
         return success_response(
             _wechat_account_to_api({**account, "faker_id": account.get("faker_id", wechat_account_id)})

@@ -1,0 +1,11 @@
+.git
+node_modules/
+dist/
+.vite/
+.env
+.env.*
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+Dockerfile

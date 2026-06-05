@@ -123,19 +123,6 @@ async def getToken(form_data: OAuth2PasswordRequestForm = Depends()):
         )
 
 
-@router.post("/login", summary="获取Token(兼容旧登录路径)")
-async def login_compat(form_data: OAuth2PasswordRequestForm = Depends()):
-    try:
-        return await _issue_token(form_data)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_202_ACCEPTED,
-            detail=error_response(code=40101, message=f"认证失败: {str(e)}"),
-        )
-
-
 @router.post("/logout", summary="用户注销")
 async def logout(current_user: dict = Depends(get_current_user)):
     return {"code": 0, "message": "注销成功"}

@@ -27,7 +27,7 @@ class WxGatherHooks:
     约定：
     - hooks 均为 best-effort：内部自行捕获异常，不向上传播。
     """
-    on_update_mps: Optional[Callable[[str, dict], None]] = None
+    on_update_wechat_account: Optional[Callable[[str, dict], None]] = None
     on_over: Optional[Callable[[list, Optional[str]], None]] = None
     on_error: Optional[Callable[[str, Optional[str], dict], None]] = None
 
@@ -47,9 +47,9 @@ class WxGather:
         # hooks：外部副作用（DB/通知/队列/清会话等）由编排层注入
         self.hooks: WxGatherHooks | None = hooks
         if self.hooks is None:
-            # 默认 hooks 放在 core.common.task.wx_hooks，避免 base 直接依赖基础设施实现
+            # 默认 hooks 放在 core.wechat_accounts，避免 base 直接依赖基础设施实现
             try:
-                from core.common.task.wx_hooks import build_wx_gather_hooks
+                from core.wechat_accounts.hooks import build_wx_gather_hooks
 
                 self.hooks = build_wx_gather_hooks()
             except Exception:
@@ -277,16 +277,19 @@ class WxGather:
     def FillBack(self, CallBack=None, data=None, Ext_Data=None):
         if CallBack is not None:
             if data is not None:
-                from datetime import datetime
-
+                publish_time = (
+                    data.get("publish_time")
+                    or data.get("create_time")
+                    or data.get("update_time")
+                )
                 art = {
-                    "id": str(data["id"]),
-                    "wechat_account_id": data["wechat_account_id"],
-                    "title": data["title"],
-                    "url": data["link"],
-                    "pic_url": data["cover"],
+                    "id": str(data.get("id") or data.get("aid")),
+                    "wechat_account_id": data.get("wechat_account_id"),
+                    "title": data.get("title", ""),
+                    "url": data.get("link", ""),
+                    "pic_url": data.get("cover", ""),
                     "content": data.get("content", ""),
-                    "publish_time": data["update_time"],
+                    "publish_time": publish_time,
                 }
                 if "digest" in data:
                     art["description"] = data["digest"]
@@ -351,7 +354,7 @@ class WxGather:
             return
         import time
 
-        self.update_mps(
+        self.update_wechat_account(
             wechat_account_id,
             {
                 "sync_time": int(time.time()),
@@ -537,10 +540,10 @@ class WxGather:
         html_content = self._clean_article_content(html_content)
         return self.remove_html_region(html_content, common_patterns)
 
-    def update_mps(self, wechat_account_id: str, mp: dict):
+    def update_wechat_account(self, wechat_account_id: str, account: dict):
         """更新公众号同步状态/时间（副作用由 hooks 实现）。"""
         try:
-            if self.hooks and self.hooks.on_update_mps:
-                self.hooks.on_update_mps(wechat_account_id, mp)
+            if self.hooks and self.hooks.on_update_wechat_account:
+                self.hooks.on_update_wechat_account(wechat_account_id, account)
         except Exception:
             pass

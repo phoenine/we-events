@@ -6,7 +6,7 @@ from typing import Dict, Any
 from core.integrations.supabase.auth import get_current_user
 from schemas import success_response, error_response, API_VERSION
 from core.common.app_settings import settings
-from jobs.wechat_accounts import TaskQueue
+from core.jobs import TaskQueue
 from driver.wx.service import get_state as wx_get_state, get_session_info as wx_get_session_info
 from driver.wx.state import LoginState
 
