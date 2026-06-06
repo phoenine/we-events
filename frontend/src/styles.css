@@ -155,6 +155,17 @@ a {
   height: auto;
 }
 
+.article-title-button {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(180px, 1fr));
@@ -272,6 +283,23 @@ a {
   margin-top: 8px;
 }
 
+.calendar-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.calendar-modal {
+  max-width: calc(100vw - 32px);
+  padding-bottom: 0;
+}
+
+.calendar-modal .ant-modal-body {
+  max-height: min(68vh, 620px);
+  overflow: auto;
+  padding-right: 18px;
+}
+
 @media (max-width: 860px) {
   .app-sidebar {
     display: none;
@@ -291,5 +319,13 @@ a {
 
   .activity-grid {
     grid-template-columns: 1fr;
+  }
+
+  .calendar-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-modal .ant-modal-body {
+    max-height: calc(100vh - 180px);
   }
 }

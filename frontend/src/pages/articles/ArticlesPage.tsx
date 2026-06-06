@@ -146,23 +146,24 @@ export default function ArticlesPage() {
     {
       title: "标题",
       dataIndex: "title",
+      ellipsis: true,
       render: (value, record) => (
-        <Button type="link" style={{ padding: 0 }} onClick={() => setSelected(record)}>
+        <Button type="link" className="article-title-button" onClick={() => setSelected(record)}>
           {value || "无标题"}
         </Button>
       ),
     },
-    { title: "公众号", dataIndex: "mp_name", width: 160 },
+    { title: "公众号", dataIndex: "mp_name", width: 190, ellipsis: true },
     {
       title: "发布时间",
       dataIndex: "publish_time",
-      width: 180,
+      width: 170,
       render: (value) => formatEpochSeconds(value),
     },
     {
       title: "活动抽取",
       dataIndex: "activity_extraction_status",
-      width: 130,
+      width: 120,
       render: renderExtractionStatus,
     },
     {

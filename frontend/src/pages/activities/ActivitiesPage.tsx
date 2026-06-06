@@ -3,17 +3,32 @@ import {
   DeleteOutlined,
   EnvironmentOutlined,
   LinkOutlined,
+  ScheduleOutlined,
   TagsOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Card, Drawer, Popconfirm, Space, Tag, Typography } from "antd";
+import { App, Button, Card, DatePicker, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Tag, Typography } from "antd";
 import dayjs from "dayjs";
+import type { Dayjs } from "dayjs";
 import { useMemo, useState } from "react";
 import { deleteActivity, listActivities } from "@/api/activities";
 import EmptyState from "@/components/common/EmptyState";
 import PageHeader from "@/components/common/PageHeader";
 import type { Activity } from "@/types/api";
+import { buildIcsEvent, downloadIcs } from "@/utils/calendar";
+
+const { TextArea } = Input;
+
+interface CalendarFormValues {
+  title: string;
+  startsAt: Dayjs;
+  endsAt?: Dayjs;
+  location?: string;
+  description?: string;
+  url?: string;
+  alarmMinutes?: number;
+}
 
 const eventStatusMeta: Record<string, { label: string; color: string; className: string; order: number }> = {
   ongoing: { label: "进行中", color: "green", className: "status-ongoing", order: 0 },
@@ -52,8 +67,30 @@ function compareActivityTime(a?: string, b?: string) {
   return dayjs(a).valueOf() - dayjs(b).valueOf();
 }
 
+function buildCalendarDescription(activity: Activity) {
+  return [
+    activity.summary,
+    activity.event_time_text ? `活动时间：${activity.event_time_text}` : "",
+    activity.fee_text ? `费用：${activity.fee_text}` : "",
+    activity.audience ? `对象：${activity.audience}` : "",
+    activity.registration_text ? `报名说明：${activity.registration_text}` : "",
+    activity.registration_url ? `报名链接：${activity.registration_url}` : "",
+    activity.article_url ? `原文链接：${activity.article_url}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function getDefaultCalendarRange(activity: Activity) {
+  const startsAt = activity.start_at ? dayjs(activity.start_at) : undefined;
+  const endsAt = activity.end_at ? dayjs(activity.end_at) : startsAt?.add(2, "hour");
+  return { startsAt, endsAt };
+}
+
 export default function ActivitiesPage() {
   const [selected, setSelected] = useState<Activity | null>(null);
+  const [calendarActivity, setCalendarActivity] = useState<Activity | null>(null);
+  const [calendarForm] = Form.useForm<CalendarFormValues>();
   const queryClient = useQueryClient();
   const { message } = App.useApp();
   const query = useQuery({ queryKey: ["activities"], queryFn: () => listActivities({ limit: 200 }) });
@@ -76,6 +113,36 @@ export default function ActivitiesPage() {
       return compareActivityTime(a.start_at, b.start_at);
     });
   }, [query.data]);
+
+  const openCalendarModal = (activity: Activity) => {
+    const { startsAt, endsAt } = getDefaultCalendarRange(activity);
+    setCalendarActivity(activity);
+    calendarForm.setFieldsValue({
+      title: activity.title || "未命名活动",
+      startsAt,
+      endsAt,
+      location: activity.location_text || "",
+      description: buildCalendarDescription(activity),
+      url: activity.registration_url || activity.article_url || "",
+      alarmMinutes: 60,
+    });
+  };
+
+  const submitCalendarEvent = async () => {
+    const values = await calendarForm.validateFields();
+    const content = buildIcsEvent({
+      title: values.title,
+      startsAt: values.startsAt.toISOString(),
+      endsAt: values.endsAt?.toISOString(),
+      location: values.location,
+      description: values.description,
+      url: values.url,
+      alarmMinutes: values.alarmMinutes,
+    });
+    downloadIcs(values.title, content);
+    message.success("已生成日历文件");
+    setCalendarActivity(null);
+  };
 
   return (
     <div className="page">
@@ -144,6 +211,9 @@ export default function ActivitiesPage() {
                   </div>
 
                   <div className="activity-card-footer" onClick={(event) => event.stopPropagation()}>
+                    <Button type="link" size="small" icon={<ScheduleOutlined />} onClick={() => openCalendarModal(activity)}>
+                      日历
+                    </Button>
                     <Button type="link" size="small" onClick={() => setSelected(activity)}>
                       查看详情
                     </Button>
@@ -201,6 +271,11 @@ export default function ActivitiesPage() {
               </div>
             </div>
           )}
+          {selected && (
+            <Button icon={<ScheduleOutlined />} onClick={() => openCalendarModal(selected)}>
+              添加到日历
+            </Button>
+          )}
           <Popconfirm title="删除这个活动？" onConfirm={() => selected && remove.mutate(selected.id)}>
             <Button danger icon={<DeleteOutlined />} loading={remove.isPending}>
               删除活动
@@ -208,6 +283,66 @@ export default function ActivitiesPage() {
           </Popconfirm>
         </Space>
       </Drawer>
+
+      <Modal
+        title="添加到日历"
+        className="calendar-modal"
+        centered
+        open={!!calendarActivity}
+        okText="生成日历文件"
+        cancelText="取消"
+        onCancel={() => setCalendarActivity(null)}
+        onOk={submitCalendarEvent}
+        width={640}
+      >
+        <Form form={calendarForm} layout="vertical">
+          <Form.Item name="title" label="事件标题" rules={[{ required: true, message: "请输入事件标题" }]}>
+            <Input />
+          </Form.Item>
+          <div className="calendar-form-grid">
+            <Form.Item name="startsAt" label="开始时间" rules={[{ required: true, message: "请选择开始时间" }]}>
+              <DatePicker showTime format="YYYY-MM-DD HH:mm" style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              name="endsAt"
+              label="结束时间"
+              dependencies={["startsAt"]}
+              rules={[
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    const startsAt = getFieldValue("startsAt");
+                    if (!value || !startsAt || value.isAfter(startsAt)) {
+                      return Promise.resolve();
+                    }
+                    return Promise.reject(new Error("结束时间必须晚于开始时间"));
+                  },
+                }),
+              ]}
+            >
+              <DatePicker showTime format="YYYY-MM-DD HH:mm" style={{ width: "100%" }} />
+            </Form.Item>
+          </div>
+          <Form.Item name="location" label="地点">
+            <Input />
+          </Form.Item>
+          <Form.Item name="url" label="链接">
+            <Input />
+          </Form.Item>
+          <Form.Item name="alarmMinutes" label="提醒">
+            <Select
+              options={[
+                { value: 0, label: "不提醒" },
+                { value: 15, label: "提前 15 分钟" },
+                { value: 60, label: "提前 1 小时" },
+                { value: 1440, label: "提前 1 天" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="description" label="备注">
+            <TextArea rows={6} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }
