@@ -37,6 +37,8 @@ def _activity_row(
     end_at = activity.end_at
     event_status = compute_event_status(start_at, end_at)
     review_status = compute_review_status(output.confidence, warnings)
+    if not activity.title.strip() or not activity.event_time_text.strip() and not start_at:
+        review_status = "needs_review"
 
     return {
         "article_id": article.get("id") or "",

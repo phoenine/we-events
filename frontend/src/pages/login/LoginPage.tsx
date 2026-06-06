@@ -18,7 +18,7 @@ export default function LoginPage() {
       const result = await login(values);
       setAuth(result.access_token, result.user || null);
       message.success("登录成功");
-      const redirect = (location.state as any)?.from || "/articles";
+      const redirect = (location.state as any)?.from || "/activities";
       navigate(redirect, { replace: true });
     } catch (error) {
       message.error(error instanceof Error ? error.message : "登录失败");

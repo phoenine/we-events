@@ -26,7 +26,7 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      { index: true, element: <Navigate to="/articles" replace /> },
+      { index: true, element: <Navigate to="/activities" replace /> },
       { path: "articles", element: <ArticlesPage /> },
       { path: "wechat-accounts", element: <WechatAccountsPage /> },
       { path: "wechat-accounts/add", element: <AddWechatAccountPage /> },

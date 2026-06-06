@@ -182,6 +182,33 @@ def compute_event_status(start_at: str | None, end_at: str | None) -> str:
     return "unknown"
 
 
+REVIEW_RISK_KEYWORDS = (
+    "不明确",
+    "未明确",
+    "缺失",
+    "无法判断",
+    "无法确定",
+    "不确定",
+    "待确认",
+    "未提及",
+    "没有提及",
+    "未找到",
+    "无法识别",
+    "解析失败",
+    "需要人工",
+    "低置信度",
+)
+
+
+def has_review_risk(warnings: list[str]) -> bool:
+    for warning in warnings:
+        text = str(warning or "").strip()
+        if text and any(keyword in text for keyword in REVIEW_RISK_KEYWORDS):
+            return True
+    return False
+
+
 def compute_review_status(confidence: float, warnings: list[str]) -> str:
-    severe_warnings = [item for item in warnings if str(item).strip()]
-    return "published" if confidence >= 0.75 and not severe_warnings else "needs_review"
+    if confidence < 0.75:
+        return "needs_review"
+    return "needs_review" if has_review_risk(warnings) else "published"
