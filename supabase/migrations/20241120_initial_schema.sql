@@ -40,7 +40,7 @@ create table if not exists public.wechat_accounts (
   name text not null,
   description text,
   logo_url text,
-  faker_id text unique,
+  faker_id text not null unique,
   group_id integer references public.wechat_account_groups(id) on delete set null,
   last_publish timestamptz,
   last_fetch timestamptz,
@@ -175,6 +175,9 @@ create index if not exists idx_wechat_accounts_status on public.wechat_accounts(
 create index if not exists idx_wechat_accounts_group_id on public.wechat_accounts(group_id);
 create index if not exists idx_activity_extraction_runs_article_created on public.activity_extraction_runs(article_id, created_at desc);
 create index if not exists idx_activity_extraction_runs_status_created on public.activity_extraction_runs(status, created_at desc);
+create unique index if not exists idx_activity_extraction_runs_one_processing_article
+  on public.activity_extraction_runs(article_id)
+  where status = 'processing';
 create index if not exists idx_activities_article_id on public.activities(article_id);
 create index if not exists idx_activities_source_wechat_account_start_at on public.activities(source_wechat_account_id, start_at desc);
 create index if not exists idx_activities_review_status_start_at on public.activities(review_status, start_at desc);

@@ -105,6 +105,15 @@ class ActivityExtractionRunsRepository:
         )
         return rows[0] if rows else None
 
+    async def get_latest_processing_run_by_article(self, article_id: str):
+        rows = await self.client.select(
+            self.RUN_TABLE,
+            filters={"article_id": article_id, "status": "processing"},
+            limit=1,
+            order="created_at.desc",
+        )
+        return rows[0] if rows else None
+
     async def update_run(self, run_id: str, run_data: dict[str, Any]):
         run_data["updated_at"] = datetime.now(timezone.utc).isoformat()
         return await self.client.update(

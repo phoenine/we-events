@@ -11,11 +11,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button, Card, DatePicker, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Tag, Typography } from "antd";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
-import { useMemo, useState } from "react";
-import { deleteActivity, listActivities } from "@/api/activities";
+import { useEffect, useMemo, useState } from "react";
+import { deleteActivity, getActivityExtractionRun, listActivities } from "@/api/activities";
 import EmptyState from "@/components/common/EmptyState";
 import PageHeader from "@/components/common/PageHeader";
 import type { Activity } from "@/types/api";
+import {
+  loadActivityExtractionRuns,
+  removeActivityExtractionRuns,
+} from "@/utils/activityExtractionRuns";
 import { buildIcsEvent, downloadIcs } from "@/utils/calendar";
 
 const { TextArea } = Input;
@@ -93,7 +97,10 @@ export default function ActivitiesPage() {
   const [calendarForm] = Form.useForm<CalendarFormValues>();
   const queryClient = useQueryClient();
   const { message } = App.useApp();
-  const query = useQuery({ queryKey: ["activities"], queryFn: () => listActivities({ limit: 200 }) });
+  const query = useQuery({
+    queryKey: ["activities"],
+    queryFn: () => listActivities({ limit: 200 }),
+  });
   const remove = useMutation({
     mutationFn: deleteActivity,
     onSuccess: () => {
@@ -113,6 +120,34 @@ export default function ActivitiesPage() {
       return compareActivityTime(a.start_at, b.start_at);
     });
   }, [query.data]);
+
+  useEffect(() => {
+    const timer = window.setInterval(async () => {
+      const runs = loadActivityExtractionRuns();
+      if (!runs.length) return;
+
+      const finishedRunIds = new Set<string>();
+      await Promise.all(
+        runs.map(async (item) => {
+          try {
+            const run: any = await getActivityExtractionRun(item.runId);
+            if (run?.status !== "processing") {
+              finishedRunIds.add(item.runId);
+            }
+          } catch {
+            finishedRunIds.add(item.runId);
+          }
+        })
+      );
+
+      if (finishedRunIds.size) {
+        removeActivityExtractionRuns(finishedRunIds);
+        queryClient.invalidateQueries({ queryKey: ["activities"] });
+      }
+    }, 2500);
+
+    return () => window.clearInterval(timer);
+  }, [queryClient]);
 
   const openCalendarModal = (activity: Activity) => {
     const { startsAt, endsAt } = getDefaultCalendarRange(activity);

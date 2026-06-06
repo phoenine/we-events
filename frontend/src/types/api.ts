@@ -15,6 +15,8 @@ export interface WechatAccount {
   status?: number;
   last_fetch?: string;
   last_publish?: string;
+  update_time?: string;
+  sync_time?: string;
   article_count?: number;
 }
 
@@ -23,7 +25,8 @@ export interface WechatAccountGroup {
   name: string;
   description?: string;
   status?: number;
-  wechat_account_ids?: string[];
+  wechat_account_ids?: string[] | string;
+  wechat_account_count?: number;
 }
 
 export interface Article {

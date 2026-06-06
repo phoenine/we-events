@@ -49,6 +49,18 @@ class WeChatAccountRepository:
         accounts = await self.client.select(self.TABLE_NAME, filters={"faker_id": faker_id})
         return accounts[0] if accounts else None
 
+    async def get_wechat_account_by_identity(
+        self, *, account_id: Optional[str] = None, faker_id: Optional[str] = None
+    ):
+        """根据公众号稳定标识获取账号，优先系统 id，其次微信 fakeid。"""
+        if account_id:
+            account = await self.get_wechat_account_by_id(account_id)
+            if account:
+                return account
+        if faker_id:
+            return await self.get_wechat_account_by_faker_id(faker_id)
+        return None
+
     async def count_wechat_accounts(self, filters: Optional[Dict] = None):
         """统计公众号账号数量"""
         return await self.client.count(self.TABLE_NAME, filters=filters)

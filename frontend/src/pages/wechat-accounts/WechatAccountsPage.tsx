@@ -47,23 +47,27 @@ export default function WechatAccountsPage() {
     {
       title: "公众号",
       dataIndex: "name",
+      width: 240,
       render: (_, record) => (
-        <Space>
+        <div className="wechat-account-cell">
           <Avatar src={record.logo_url || record.mp_cover}>
             {(record.name || record.mp_name || "?").slice(0, 1)}
           </Avatar>
-          <div>
-            <div>{record.name || record.mp_name || record.id}</div>
-            <small>{record.faker_id || record.id}</small>
+          <div className="wechat-account-main">
+            <div className="wechat-account-name">{record.name || record.mp_name || record.id}</div>
+            <small className="wechat-account-id">{record.faker_id || record.id}</small>
           </div>
-        </Space>
+        </div>
       ),
     },
     {
       title: "描述",
       dataIndex: "description",
+      width: 360,
       ellipsis: true,
-      render: (_, record) => record.description || record.mp_intro || "-",
+      render: (_, record) => (
+        <span className="wechat-account-description">{record.description || record.mp_intro || "-"}</span>
+      ),
     },
     {
       title: "状态",
@@ -75,8 +79,10 @@ export default function WechatAccountsPage() {
       title: "最近采集",
       dataIndex: "last_fetch",
       width: 180,
-      render: (_, record) =>
-        record.last_fetch ? dayjs(record.last_fetch).format("YYYY-MM-DD HH:mm") : "-",
+      render: (_, record) => {
+        const value = record.last_fetch || record.sync_time || record.update_time;
+        return value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "-";
+      },
     },
     {
       title: "操作",
@@ -134,6 +140,8 @@ export default function WechatAccountsPage() {
       />
       <Card className="soft-card">
         <Table
+          tableLayout="fixed"
+          scroll={{ x: 1080 }}
           rowKey="id"
           loading={query.isLoading}
           columns={columns}

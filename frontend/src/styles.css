@@ -166,6 +166,41 @@ a {
   white-space: nowrap;
 }
 
+.wechat-account-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.wechat-account-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.wechat-account-id,
+.wechat-account-description {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wechat-account-name {
+  display: block;
+  max-width: 100%;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.wechat-account-id {
+  max-width: 190px;
+  color: #98a2b3;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(180px, 1fr));
