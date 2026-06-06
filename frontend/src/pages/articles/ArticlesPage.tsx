@@ -25,7 +25,7 @@ import {
 import type { TableRowSelection } from "antd/es/table/interface";
 import type { ColumnsType } from "antd/es/table";
 import DOMPurify from "dompurify";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   cleanArticles,
@@ -35,11 +35,16 @@ import {
   deleteArticlesBatch,
   listArticles,
 } from "@/api/articles";
-import { extractArticleActivities } from "@/api/activities";
+import { extractArticleActivities, getActivityExtractionRun } from "@/api/activities";
 import { listWechatAccounts, syncWechatAccountArticles } from "@/api/wechatAccounts";
 import EmptyState from "@/components/common/EmptyState";
 import PageHeader from "@/components/common/PageHeader";
 import type { Article } from "@/types/api";
+import {
+  addActivityExtractionRun,
+  loadActivityExtractionRuns,
+  removeActivityExtractionRuns,
+} from "@/utils/activityExtractionRuns";
 import { formatEpochSeconds } from "@/utils/time";
 
 export default function ArticlesPage() {
@@ -49,6 +54,7 @@ export default function ArticlesPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [selected, setSelected] = useState<Article | null>(null);
   const [extractingArticleId, setExtractingArticleId] = useState<string>();
+  const [activeExtractionRuns, setActiveExtractionRuns] = useState(loadActivityExtractionRuns);
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncForm] = Form.useForm();
   const queryClient = useQueryClient();
@@ -106,14 +112,57 @@ export default function ArticlesPage() {
     mutationFn: extractArticleActivities,
     onMutate: (articleId) => setExtractingArticleId(articleId),
     onSuccess: (data: any) => {
-      const count = data?.created_count ?? 0;
-      message.success(count ? `已抽取 ${count} 条活动` : "未识别到活动");
+      if (data?.run_id) {
+        addActivityExtractionRun({ runId: data.run_id, articleId: data.article_id });
+        setActiveExtractionRuns((runs) => {
+          if (runs.some((item) => item.runId === data.run_id)) return runs;
+          return [...runs, { runId: data.run_id, articleId: data.article_id }];
+        });
+      }
+      message.success(data?.already_running ? "活动抽取任务正在进行中" : "已开始活动抽取");
       queryClient.invalidateQueries({ queryKey: ["articles"] });
-      queryClient.invalidateQueries({ queryKey: ["activities"] });
     },
     onError: (error) => message.error(error instanceof Error ? error.message : "活动抽取失败"),
     onSettled: () => setExtractingArticleId(undefined),
   });
+
+  useEffect(() => {
+    if (!activeExtractionRuns.length) return;
+
+    const timer = window.setInterval(async () => {
+      const finishedRunIds = new Set<string>();
+      await Promise.all(
+        activeExtractionRuns.map(async (item) => {
+          try {
+            const run: any = await getActivityExtractionRun(item.runId);
+            if (run?.status === "processing") return;
+
+            finishedRunIds.add(item.runId);
+            if (run?.status === "success") {
+              message.success("活动抽取完成");
+            } else if (run?.status === "not_activity") {
+              message.info("未识别到活动");
+            } else if (run?.status === "fallback_required") {
+              message.warning(run?.error || "活动抽取需要兜底处理");
+            } else if (run?.status === "failed") {
+              message.error(run?.error || "活动抽取失败");
+            }
+          } catch (error) {
+            finishedRunIds.add(item.runId);
+            message.error(error instanceof Error ? error.message : "获取抽取任务状态失败");
+          }
+        })
+      );
+
+      if (finishedRunIds.size) {
+        setActiveExtractionRuns(removeActivityExtractionRuns(finishedRunIds));
+        queryClient.invalidateQueries({ queryKey: ["articles"] });
+        queryClient.invalidateQueries({ queryKey: ["activities"] });
+      }
+    }, 2500);
+
+    return () => window.clearInterval(timer);
+  }, [activeExtractionRuns, message, queryClient]);
 
   const confirmClean = (type: "orphan" | "duplicate" | "expired", title: string) => {
     modal.confirm({
@@ -129,6 +178,10 @@ export default function ArticlesPage() {
     selectedRowKeys,
     onChange: setSelectedRowKeys,
   };
+  const activeExtractionArticleIds = useMemo(
+    () => new Set(activeExtractionRuns.map((item) => item.articleId)),
+    [activeExtractionRuns]
+  );
   const renderExtractionStatus = (value?: string) => {
     const colorMap: Record<string, string> = {
       pending: "default",
@@ -174,8 +227,14 @@ export default function ArticlesPage() {
           <Button
             type="text"
             icon={<ThunderboltOutlined />}
-            loading={extractingArticleId === record.id && extractActivity.isPending}
-            disabled={record.activity_extraction_status === "processing"}
+            loading={
+              (extractingArticleId === record.id && extractActivity.isPending) ||
+              activeExtractionArticleIds.has(record.id)
+            }
+            disabled={
+              record.activity_extraction_status === "processing" ||
+              activeExtractionArticleIds.has(record.id)
+            }
             onClick={() => extractActivity.mutate(record.id)}
           >
             抽取

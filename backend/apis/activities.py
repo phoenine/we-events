@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, status as fa
 
 from core.activities import activity_repo, activity_run_repo
 from core.activities.extraction_output import compute_event_status
-from core.activities.service import extract_activities_from_article
+from core.activities.service import start_activity_extraction
 from core.articles import article_repo
 from core.common.log import logger
 from core.integrations.supabase.auth import get_current_user
@@ -26,7 +26,7 @@ async def extract_article_activities(
     _current_user: dict = Depends(get_current_user),
 ):
     try:
-        result = await extract_activities_from_article(article_id)
+        result = await start_activity_extraction(article_id)
         return success_response(result)
     except ValueError as exc:
         raise HTTPException(

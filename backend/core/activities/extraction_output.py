@@ -19,11 +19,25 @@ class ActivityEvidence(BaseModel):
     source: Literal["text", "image", "mixed"] = "mixed"
     image_urls: list[str] = Field(default_factory=list)
 
+    @field_validator("field", "text", mode="before")
+    @classmethod
+    def normalize_text_fields(cls, value: Any):
+        return str(value or "").strip()
+
     @field_validator("source", mode="before")
     @classmethod
     def normalize_source(cls, value: Any):
         text = str(value or "").strip().lower()
         return text if text in EVIDENCE_SOURCES else "mixed"
+
+    @field_validator("image_urls", mode="before")
+    @classmethod
+    def normalize_image_urls(cls, value: Any):
+        if isinstance(value, list):
+            return [str(item) for item in value if str(item).strip()]
+        if value:
+            return [str(value)]
+        return []
 
 
 class ExtractedActivity(BaseModel):
@@ -50,6 +64,30 @@ class ExtractedActivity(BaseModel):
             raise ValueError("activity title is required")
         return text
 
+    @field_validator(
+        "summary",
+        "event_time_text",
+        "location_text",
+        "registration_text",
+        "registration_url",
+        "fee_text",
+        "audience",
+        mode="before",
+    )
+    @classmethod
+    def normalize_optional_text(cls, value: Any):
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    @field_validator("start_at", "end_at", mode="before")
+    @classmethod
+    def normalize_optional_datetime_text(cls, value: Any):
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
     @field_validator("registration_method", mode="before")
     @classmethod
     def normalize_registration_method(cls, value: Any):
@@ -64,6 +102,11 @@ class ExtractedActivity(BaseModel):
         if value:
             return [str(value)]
         return []
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def normalize_evidence(cls, value: Any):
+        return value if isinstance(value, list) else []
 
 
 class ActivityExtractionOutput(BaseModel):

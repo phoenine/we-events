@@ -4,6 +4,8 @@ from core.common.log import logger
 import time
 import base64
 import re
+import html
+import json
 from datetime import datetime
 from driver.session.manager import SessionManager
 from driver.wx.schemas import WxMpSession, WxMpInfo, WxArticleInfo, WxArticleError
@@ -130,6 +132,79 @@ class WXArticleFetcher:
         except Exception as e:
             logger.error(f"提取文章ID失败: {e}")
             return ""
+
+    @staticmethod
+    def _decode_js_string(value: str) -> str:
+        """解码微信文章页源码里的 JS 字符串。"""
+        text = str(value or "")
+        if not text:
+            return ""
+        try:
+            text = json.loads(f'"{text}"')
+        except Exception:
+            pass
+        return html.unescape(text).strip()
+
+    @staticmethod
+    def _is_truncated_name(value: str) -> bool:
+        text = str(value or "").strip()
+        return "..." in text or "…" in text
+
+    @classmethod
+    def _clean_mp_name(cls, value: str) -> str:
+        text = cls._decode_js_string(value)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    @classmethod
+    def _extract_mp_name_from_source(cls, page_source: str) -> str:
+        """从文章源码中提取完整公众号名称，优先避开页面展示用省略名。"""
+        if not page_source:
+            return ""
+
+        patterns = [
+            r'var\s+nickname\s*=\s*"((?:\\.|[^"\\])*)"',
+            r'var\s+profile_nickname\s*=\s*"((?:\\.|[^"\\])*)"',
+            r'"nickname"\s*:\s*"((?:\\.|[^"\\])*)"',
+            r'"profile_nickname"\s*:\s*"((?:\\.|[^"\\])*)"',
+        ]
+        fallback = ""
+        for pattern in patterns:
+            match = re.search(pattern, page_source)
+            if not match:
+                continue
+            name = cls._clean_mp_name(match.group(1))
+            if not name:
+                continue
+            if not cls._is_truncated_name(name):
+                return name
+            fallback = fallback or name
+
+        return fallback
+
+    def _extract_mp_name_from_dom(self, page) -> str:
+        """从 DOM 提取公众号名，作为源码变量缺失时的兜底。"""
+        selectors = [
+            "#js_name",
+            "#profileBt .profile_nickname",
+            ".profile_nickname",
+            "#js_wx_follow_nickname",
+        ]
+        fallback = ""
+        for selector in selectors:
+            try:
+                name = self._clean_mp_name(
+                    page.locator(selector).first.text_content() or ""
+                )
+            except Exception:
+                name = ""
+            if not name:
+                continue
+            if not self._is_truncated_name(name):
+                return name
+            fallback = fallback or name
+
+        return fallback
 
     def _inject_mp_cookies(self):
         """向浏览器上下文注入已保存的公众号 Cookie"""
@@ -432,10 +507,16 @@ class WXArticleFetcher:
             # 获取<img>公众号分组的src属性
             logo_src = ele_logo.get_attribute("src")
 
-            # 获取公众号名称（避免依赖 jQuery）
-            title = (
-                page.locator("#js_wx_follow_nickname").text_content() or ""
-            ).strip()
+            # 获取公众号名称：优先用源码里的完整 nickname，展示节点可能已被微信截断为“...”
+            try:
+                page_source = page.content()
+            except Exception:
+                page_source = ""
+            title = self._extract_mp_name_from_source(page_source)
+            if not title:
+                title = self._extract_mp_name_from_dom(page)
+            if self._is_truncated_name(title):
+                logger.warning(f"公众号名称疑似被截断: {title}")
 
             # biz 可能不存在，需降级处理
             try:

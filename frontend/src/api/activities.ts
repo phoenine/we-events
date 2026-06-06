@@ -44,3 +44,7 @@ export function deleteActivity(id: string) {
 export function extractArticleActivities(articleId: string) {
   return http.post(`/wx/activities/extract/article/${articleId}`);
 }
+
+export function getActivityExtractionRun(runId: string) {
+  return http.get(`/wx/activities/extraction-runs/${runId}`);
+}

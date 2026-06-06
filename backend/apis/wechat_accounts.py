@@ -25,18 +25,45 @@ from jobs.article import UpdateArticle
 router = APIRouter(prefix="/wechat-accounts", tags=["公众号管理"])
 
 
+def _normalize_wechat_faker_id(value: str | None) -> str:
+    return str(value or "").strip()
+
+
+def _derive_wechat_account_id(faker_id: str) -> str:
+    try:
+        decoded = base64.b64decode(faker_id).decode("utf-8")
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(code=40002, message="无效的公众号ID"),
+        )
+    if not decoded:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(code=40002, message="无效的公众号ID"),
+        )
+    return f"MP_WXS_{decoded}"
+
+
 def _wechat_account_to_api(account: Dict[str, Any]) -> Dict[str, Any]:
     """将 wechat_accounts 表真实字段映射为前端 API 字段。"""
     return {
         "id": account.get("id"),
+        "name": account.get("name") or account.get("mp_name"),
         "mp_name": account.get("mp_name") or account.get("name"),
+        "logo_url": account.get("logo_url")
+        or account.get("mp_cover")
+        or account.get("cover"),
         "mp_cover": account.get("mp_cover")
         or account.get("cover")
         or account.get("logo_url"),
+        "description": account.get("description") or account.get("mp_intro"),
         "mp_intro": account.get("mp_intro") or account.get("description"),
         "status": account.get("status"),
         "created_at": account.get("created_at"),
         "faker_id": account.get("faker_id"),
+        "last_fetch": account.get("last_fetch"),
+        "last_publish": account.get("last_publish"),
         # 兼容旧前端字段，底层映射到现有 wechat_accounts 列
         "update_time": account.get("update_time") or account.get("last_fetch"),
         "sync_time": account.get("sync_time") or account.get("last_fetch"),
@@ -86,7 +113,10 @@ async def list_wechat_accounts(
 
         # 获取分页数据
         accounts_raw = await wechat_account_repo.get_wechat_accounts(
-            filters=filters, limit=limit, offset=offset, order_by="created_at"
+            filters=filters,
+            limit=limit,
+            offset=offset,
+            order_by="last_fetch.desc,created_at.desc",
         )
         accounts: List[Dict[str, Any]] = cast(List[Dict[str, Any]], accounts_raw)
 
@@ -299,29 +329,24 @@ async def create_wechat_account(
     _current_user: dict = Depends(get_current_user),
 ):
     try:
-
-        if not wechat_account_id:
+        faker_id = _normalize_wechat_faker_id(wechat_account_id)
+        if not faker_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=error_response(code=40001, message="缺少公众号ID"),
             )
 
-        try:
-            mpx_id = base64.b64decode(wechat_account_id).decode("utf-8")
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_response(code=40002, message="无效的公众号ID"),
-            )
+        account_id = _derive_wechat_account_id(faker_id)
 
         cover_path: Optional[str] = avatar or mp_cover
 
         now = datetime.now(timezone.utc)
         now_iso = now.isoformat()
 
-        # 检查公众号是否已存在（按 faker_id / wechat_account_id）
-        existing_account_raw = await wechat_account_repo.get_wechat_account_by_faker_id(
-            wechat_account_id
+        # 公众号去重只使用稳定标识：系统 id / 微信 fakeid，不使用公众号名称。
+        existing_account_raw = await wechat_account_repo.get_wechat_account_by_identity(
+            account_id=account_id,
+            faker_id=faker_id,
         )
         existing_account: Dict[str, Any] = cast(Dict[str, Any], existing_account_raw)
 
@@ -342,14 +367,14 @@ async def create_wechat_account(
         else:
             # 创建新的公众号账号记录
             account_data: Dict[str, Any] = {
-                "id": f"MP_WXS_{mpx_id}",
+                "id": account_id,
                 "name": mp_name,
                 "logo_url": cover_path,
                 "description": mp_intro,
                 "status": 1,  # 默认启用状态
                 "created_at": now_iso,
                 "updated_at": now_iso,
-                "faker_id": wechat_account_id,
+                "faker_id": faker_id,
             }
             account = await wechat_account_repo.create_wechat_account(account_data)
 
@@ -358,7 +383,7 @@ async def create_wechat_account(
 
         return success_response(
             _wechat_account_to_api(
-                {**account, "faker_id": account.get("faker_id", wechat_account_id)}
+                {**account, "faker_id": account.get("faker_id", faker_id)}
             )
         )
     except HTTPException:

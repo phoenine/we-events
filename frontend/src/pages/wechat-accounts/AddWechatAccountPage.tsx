@@ -22,8 +22,14 @@ function normalizeLookupResult(data: any) {
       article?.id ||
       "",
     logoUrl: mpInfo?.logo || article?.logo_url || article?.avatar || "",
-    description: article?.description || article?.title || "",
+    description: mpInfo?.signature || article?.mp_intro || article?.account_description || "",
   };
+}
+
+function normalizeSearchName(item: any) {
+  const name = item?.nickname || item?.mp_name || item?.name || "";
+  const text = String(name);
+  return text.includes("...") || text.includes("…") ? "" : name;
 }
 
 export default function AddWechatAccountPage() {
@@ -62,7 +68,7 @@ export default function AddWechatAccountPage() {
 
   const selectSearchResult = (item: any) => {
     const account = {
-      name: item?.nickname || item?.mp_name || item?.name || "",
+      name: normalizeSearchName(item),
       sourceId: item?.fakeid || item?.faker_id || item?.wechat_account_id || item?.id || "",
       logoUrl: item?.round_head_img || item?.logo_url || item?.avatar || "",
       description: item?.signature || item?.description || "",
@@ -74,6 +80,9 @@ export default function AddWechatAccountPage() {
       logoUrl: account.logoUrl,
       description: account.description,
     });
+    if (!account.name) {
+      message.warning("搜索结果名称被微信截断，请手动补全公众号名称后保存。");
+    }
   };
 
   return (
