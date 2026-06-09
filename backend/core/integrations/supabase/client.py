@@ -1,6 +1,6 @@
 import os
 from typing import Optional, Dict, List, Union, Any, cast
-from supabase import create_client, Client
+from supabase import create_client, Client, ClientOptions
 
 from core.integrations.supabase.settings import settings
 from core.common.log import logger
@@ -26,7 +26,12 @@ class SupabaseClient:
 
         try:
             # 使用服务角色密钥以绕过RLS限制
-            self.client = create_client(self.url, self.key)
+            # 自定义 httpx client，禁用 SSL 验证以避免一些 TLS 兼容性问题
+            import httpx
+            transport = httpx.HTTPTransport(retries=2)
+            custom_client = httpx.Client(transport=transport, verify=False)
+            options = ClientOptions(httpx_client=custom_client)
+            self.client = create_client(self.url, self.key, options=options)
             self._initialized = True
             logger.info("Supabase客户端初始化成功")
         except Exception as e:

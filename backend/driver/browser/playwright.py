@@ -61,7 +61,8 @@ class PlaywrightController:
             with LAUNCH_MUTEX:
                 with self._lock:
                     # 若浏览器已启动且页面可用，直接复用，避免重复拉起
-                    if self.page is not None and self.isClose is False:
+                    current_tid = threading.get_ident()
+                    if self.page is not None and self.isClose is False and self._driver_thread_id == current_tid:
                         return self.page
 
                     current_tid = threading.get_ident()
