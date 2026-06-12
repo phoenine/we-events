@@ -1,5 +1,6 @@
 import os
 from typing import Optional, Dict, Any
+import httpx
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import (
@@ -169,50 +170,54 @@ class SupabaseAuthManager:
             return False
 
     async def get_user_by_token(self, token: str) -> Optional[Dict[str, Any]]:
-        """根据 Supabase Access Token 获取用户信息"""
-        try:
-            # 使用独立客户端，避免共享会话在并发请求中串号
-            client = create_client(self.url, self.anon_key)
-            # 使用 Access Token 设置当前会话并获取用户
-            client.auth.set_session(token, "")
-            user = client.auth.get_user()
-
-            # get_user() 返回的对象可能存在 user 为空的情况，这里显式判断
-            if not user or not getattr(user, "user", None):
-                return None
-
-            profile: Dict[str, Any] = {}
+        MAX_RETRIES = 3
+        for attempt in range(MAX_RETRIES):
             try:
-                service_client = self.get_client(use_service=True)
-                profile_response = (
-                    service_client.table("profiles")
-                    .select("username,nickname,role,status")
-                    .eq("user_id", str(user.user.id))
-                    .limit(1)
-                    .execute()
-                )
-                rows = profile_response.data or []
-                profile = rows[0] if rows else {}
-            except Exception as profile_err:
-                logger.warning(f"读取用户 profile 失败: {profile_err}")
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(
+                        f"{self.url}/auth/v1/user",
+                        headers={"apikey": self.anon_key, "Authorization": f"Bearer {token}"},
+                    )
+                if resp.status_code != 200:
+                    logger.warning(f"auth verify attempt {attempt+1}/{MAX_RETRIES} status={resp.status_code}")
+                    if attempt < MAX_RETRIES - 1:
+                        import asyncio
+                        await asyncio.sleep(0.5 * (attempt + 1))
+                        continue
+                    return None
+                user_data = resp.json()
+                if not user_data or not user_data.get("id"):
+                    return None
 
-            if (profile.get("status") or "active") != "active":
+                profile = {}
+                try:
+                    svc = self.get_client(use_service=True)
+                    rows = (svc.table("profiles").select("username,nickname,role,status")
+                            .eq("user_id", str(user_data["id"])).limit(1).execute()).data
+                    profile = rows[0] if rows else {}
+                except Exception as ex:
+                    logger.warning(f"profile read failed: {ex}")
+
+                if (profile.get("status") or "active") != "active":
+                    return None
+
+                return {
+                    "id": str(user_data["id"]),
+                    "email": user_data.get("email"),
+                    "username": profile.get("username") or user_data.get("user_metadata", {}).get("username") or user_data.get("email"),
+                    "nickname": profile.get("nickname"),
+                    "role": profile.get("role") or "user",
+                    "status": profile.get("status") or "active",
+                }
+
+            except Exception as e:
+                logger.warning(f"auth verify exception attempt {attempt+1}: {e}")
+                if attempt < MAX_RETRIES - 1:
+                    import asyncio
+                    await asyncio.sleep(1.0 * (attempt + 1))
+                    continue
                 return None
-
-            return {
-                "id": str(user.user.id),
-                "email": user.user.email,
-                "username": profile.get("username")
-                or user.user.user_metadata.get("username")
-                or user.user.email,
-                "nickname": profile.get("nickname"),
-                "role": profile.get("role") or "user",
-                "status": profile.get("status") or "active",
-            }
-
-        except Exception as e:
-            logger.error(f"获取用户信息失败: {e}")
-            return None
+        return None
 
     async def refresh_token(self, refresh_token: str) -> Optional[Dict[str, Any]]:
         """刷新访问令牌"""

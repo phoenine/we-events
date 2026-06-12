@@ -20,7 +20,6 @@ class SupabaseStorage:
         self.bucket = bucket_conf.name
         self.path = bucket_conf.path
         self.expires = bucket_conf.expires
-        self._client = httpx.AsyncClient(timeout=30.0)
 
     def valid(self) -> bool:
         return bool(self.url and self.key and self.bucket)
@@ -38,11 +37,12 @@ class SupabaseStorage:
         content_type: str = "application/octet-stream",
     ) -> str:
         url = f"{self.url}/storage/v1/object/{self.bucket}/{path}"
-        resp = await self._client.post(
-            url,
-            headers=self._headers(content_type),
-            content=data,
-        )
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                url,
+                headers=self._headers(content_type),
+                content=data,
+            )
         if resp.status_code not in (200, 201):
             body = (resp.text or "")[:300]
             low = body.lower()
@@ -69,11 +69,12 @@ class SupabaseStorage:
         ex = expires or self.expires
         url = f"{self.url}/storage/v1/object/sign/{self.bucket}/{path}"
         body = {"expiresIn": ex}
-        resp = await self._client.post(
-            url,
-            headers=self._headers("application/json"),
-            json=body,
-        )
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                url,
+                headers=self._headers("application/json"),
+                json=body,
+            )
         if resp.status_code != 200:
             raise Exception(resp.text)
         data = resp.json()
@@ -95,7 +96,8 @@ class SupabaseStorage:
         if not path:
             return False
         url = f"{self.url}/storage/v1/object/{self.bucket}/{path}"
-        resp = await self._client.head(url, headers=self._headers())
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.head(url, headers=self._headers())
         if resp.status_code == 200:
             return True
         if resp.status_code in (404, 400):
@@ -108,7 +110,8 @@ class SupabaseStorage:
         if not path:
             return True
         url = f"{self.url}/storage/v1/object/{self.bucket}/{path}"
-        resp = await self._client.delete(url, headers=self._headers())
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.delete(url, headers=self._headers())
         if resp.status_code in (200, 204, 404):
             return True
         # 自部署 Supabase 可能返回 400 + not found，按已删除处理
