@@ -100,7 +100,7 @@ export default function AppLayout() {
       >
         <div className="app-logo">
           <div className="logo-mark">活</div>
-          {!collapsed && <span>微信活动订阅助手</span>}
+          {!collapsed && <span>we-events</span>}
         </div>
         <Menu mode="inline" selectedKeys={selectedKey} items={menuItems} />
       </Sider>

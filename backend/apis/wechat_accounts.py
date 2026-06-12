@@ -1,5 +1,3 @@
-import time
-import threading
 import base64
 import asyncio
 from datetime import datetime, timezone
@@ -15,12 +13,13 @@ from fastapi import (
 )
 from core.integrations.supabase.auth import get_current_user
 from core.wechat_accounts import wechat_account_repo
-from core.wechat_accounts.collector import collect_wechat_account_articles
+from core.articles.collection_service import (
+    enqueue_account_collection,
+    get_article_collection_run,
+)
 from core.integrations.wx import search_Biz
 from core.common.log import logger
-from core.common.runtime_settings import runtime_settings
 from schemas import success_response, error_response
-from jobs.article import UpdateArticle
 
 router = APIRouter(prefix="/wechat-accounts", tags=["公众号管理"])
 
@@ -143,56 +142,16 @@ async def sync_wechat_account_articles(
     _current_user: dict = Depends(get_current_user),
 ):
     try:
-        # 获取公众号信息
-        mp_raw = await wechat_account_repo.get_wechat_account_by_id(wechat_account_id)
-        mp: Dict[str, Any] = cast(Dict[str, Any], mp_raw)
-        if not mp:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=error_response(code=40401, message="请选择一个公众号"),
-            )
-
-        sync_interval = await runtime_settings.get_int("sync_interval", 60)
-        last_sync_epoch = 0
-        if mp.get("update_time") is not None:
-            try:
-                last_sync_epoch = int(mp.get("update_time", 0))
-            except Exception:
-                last_sync_epoch = 0
-        elif mp.get("last_fetch"):
-            try:
-                dt = datetime.fromisoformat(
-                    str(mp.get("last_fetch")).replace("Z", "+00:00")
-                )
-                last_sync_epoch = int(dt.timestamp())
-            except Exception:
-                last_sync_epoch = 0
-        time_span = int(time.time()) - int(last_sync_epoch or 0)
-        if time_span < sync_interval:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=error_response(
-                    code=40402,
-                    message="请不要频繁更新操作",
-                    data={"time_span": time_span},
-                ),
-            )
-
-        def UpArt(mp_data):
-            try:
-                collect_wechat_account_articles(
-                    mp_data,
-                    on_article=UpdateArticle,
-                    start_page=start_page,
-                    max_page=end_page,
-                )
-            except Exception as e:
-                logger.error(f"更新公众号文章线程异常: {e}")
-
-        threading.Thread(target=UpArt, args=(mp,)).start()
-
-        return success_response(
-            {"time_span": time_span, "list": [], "total": 0, "wechat_account": mp}
+        result = await enqueue_account_collection(
+            wechat_account_id,
+            start_page=start_page,
+            max_page=end_page,
+        )
+        return success_response(result)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(code=40001, message=str(e)),
         )
     except HTTPException:
         raise
@@ -201,6 +160,29 @@ async def sync_wechat_account_articles(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=50001, message=f"更新公众号文章{str(e)}"),
+        )
+
+
+@router.get("/collection-runs/{run_id}", summary="获取文章采集任务状态")
+async def get_article_collection_run_status(
+    run_id: str,
+    _current_user: dict = Depends(get_current_user),
+):
+    try:
+        run = await get_article_collection_run(run_id)
+        if not run:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_response(code=40404, message="文章采集任务不存在"),
+            )
+        return success_response(run)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取文章采集任务状态失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=50001, message=f"获取文章采集任务状态失败: {str(e)}"),
         )
 
 

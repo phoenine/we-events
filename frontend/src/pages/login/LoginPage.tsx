@@ -31,7 +31,7 @@ export default function LoginPage() {
     <div className="login-page">
       <Card className="login-panel soft-card">
         <Typography.Title level={3} style={{ marginBottom: 4 }}>
-          微信活动订阅助手
+          we-events
         </Typography.Title>
         <Typography.Paragraph type="secondary">
           登录后管理公众号采集、文章和活动数据。

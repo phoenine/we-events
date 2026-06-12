@@ -59,7 +59,7 @@ playwright install firefox
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_KEY`
 - `PORT` / `LOG_LEVEL` / `LOG_FILE`
-- `ENABLE_JOB` / `AUTO_RELOAD` / `THREADS`
+- `AUTO_RELOAD` / `THREADS`
 - `USERNAME` / `PASSWORD`（初始化管理员账号）
 
 数据库 schema 与 Supabase Storage 初始化以根目录 `supabase/README.md` 为准。
@@ -80,10 +80,10 @@ python init_sys.py
 python main.py
 ```
 
-若需同时启用定时任务与初始化参数：
+若需启动时同时初始化用户：
 
 ```bash
-python main.py -job True -init True
+python main.py -init True
 ```
 
 ### 5.2 Docker 启动
@@ -91,10 +91,10 @@ python main.py -job True -init True
 项目包含 `Dockerfile` 与 `entrypoint.sh`，默认会执行：
 
 ```bash
-python main.py -job True -init True
+python main.py -init True
 ```
 
-根目录 `docker-compose.yaml` 默认将 `ENABLE_JOB` 设为 `false`。当前阶段公众号采集由 API 显式触发，不再启动旧 cron/RSS 类后台任务。
+当前阶段公众号采集由 API 显式入队，FastAPI worker 消费任务，不再启动旧定时类后台任务。
 
 ## 6. API 文档
 
@@ -120,8 +120,9 @@ python main.py -job True -init True
 ## 8. 日志与任务
 
 - 日志统一走 `core.common.log`（Loguru）
-- `core.jobs.TaskQueue` 用于显式触发的后台采集任务
-- 公众号文章采集由 API/CLI 显式触发，当前阶段不保留 cron 定时任务
+- 公众号文章采集使用 Supabase 表驱动队列：`article_collection_runs` / `article_collection_items`
+- 活动抽取使用 Supabase 表驱动队列：`activity_extraction_runs`
+- 当前阶段不保留 cron 定时任务；任务由 API 显式入队，FastAPI worker 消费
 
 ## 9. 常见开发命令
 

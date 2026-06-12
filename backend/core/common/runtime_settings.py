@@ -29,11 +29,6 @@ class RuntimeSettings:
             "interval": os.getenv("SPAN_INTERVAL", default),
             "gather.content": os.getenv("GATHER_CONTENT", default),
             "gather.model": os.getenv("GATHER_MODEL", default),
-            "gather.content_mode": os.getenv("GATHER_CONTENT_MODE", default),
-            "gather.content_auto_check": os.getenv("GATHER_CONTENT_AUTO_CHECK", default),
-            "gather.content_auto_interval": os.getenv(
-                "GATHER_CONTENT_AUTO_INTERVAL", default
-            ),
         }
         return fallback_map.get(key, default)
 

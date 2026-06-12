@@ -15,25 +15,31 @@ from apis.activities import router as activities_router
 from core.common.app_settings import settings
 from core.common.log import configure_logger
 from core.common.base import VERSION, API_BASE
-from core.jobs import TaskQueue
+from core.articles.collection_service import (
+    start_article_collection_workers,
+    stop_article_collection_workers,
+)
+from core.activities.service import (
+    start_activity_extraction_workers,
+    stop_activity_extraction_workers,
+)
 
 configure_logger(level=settings.log_level, log_file=settings.log_file)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 应用启动时启动后台任务队列
-    TaskQueue.run_task_background()
+    await start_article_collection_workers()
+    await start_activity_extraction_workers()
     try:
         yield
     finally:
-        # 应用关闭时停止并清理任务队列
-        TaskQueue.stop()
-        TaskQueue.clear_queue()
+        await stop_activity_extraction_workers()
+        await stop_article_collection_workers()
 
 
 app = FastAPI(
-    title="WxHarvester API",
+    title="we-events API",
     description="微信公众号文章采集服务API文档",
     version="1.0.0",
     docs_url="/api/docs",  # 指定文档路径
@@ -68,7 +74,7 @@ async def add_custom_header(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Version"] = VERSION
     response.headers["X-Powered-By"] = "Phoenine"
-    response.headers["GITHUB"] = "https://github.com/phoenine/wechat-events-harvester"
+    response.headers["GITHUB"] = "https://github.com/phoenine/we-events"
     response.headers["Server"] = settings.app_name
     return response
 

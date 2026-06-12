@@ -45,7 +45,7 @@ function safeFilename(value: string) {
 
 export function buildIcsEvent(input: CalendarEventInput) {
   const now = formatIcsDate(new Date());
-  const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}@wechat-events-harvester`;
+  const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}@we-events`;
   const endsAt =
     input.endsAt ||
     new Date(new Date(input.startsAt).getTime() + 2 * 60 * 60 * 1000).toISOString();
@@ -53,7 +53,7 @@ export function buildIcsEvent(input: CalendarEventInput) {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//wechat-events-harvester//activity-calendar//CN",
+    "PRODID:-//we-events//activity-calendar//CN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "BEGIN:VEVENT",

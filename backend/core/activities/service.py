@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import socket
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -17,7 +19,6 @@ from core.activities.extraction_output import (
 )
 from core.articles import article_repo
 from core.common.log import logger
-from core.common.thread import ThreadManager
 
 
 def _now() -> str:
@@ -25,6 +26,19 @@ def _now() -> str:
 
 
 STALE_PROCESSING_MINUTES = int(os.getenv("ACTIVITY_EXTRACTION_STALE_MINUTES", "30"))
+WORKER_ENABLED = os.getenv("ACTIVITY_EXTRACTION_WORKER_ENABLED", "true").lower() not in {
+    "0",
+    "false",
+    "no",
+}
+WORKER_CONCURRENCY = max(1, int(os.getenv("ACTIVITY_EXTRACTION_CONCURRENCY", "1")))
+WORKER_POLL_INTERVAL_SECONDS = max(
+    1.0,
+    float(os.getenv("ACTIVITY_EXTRACTION_POLL_INTERVAL_SECONDS", "3")),
+)
+
+_worker_tasks: list[asyncio.Task[None]] = []
+_worker_stop_event: asyncio.Event | None = None
 
 
 def _parse_datetime(value: Any) -> datetime | None:
@@ -95,32 +109,6 @@ def _activity_row(
     }
 
 
-async def _mark_extraction_thread_failure(
-    article_id: str,
-    run_id: str,
-    exc: BaseException,
-) -> None:
-    run = await activity_run_repo.get_run_by_id(run_id)
-    if (run or {}).get("status") != "processing":
-        return
-    message = str(exc)
-    await activity_run_repo.update_run(
-        run_id,
-        {
-            "status": "failed",
-            "error": message,
-            "finished_at": _now(),
-        },
-    )
-    await article_repo.update_article(
-        article_id,
-        {
-            "activity_extraction_status": "failed",
-            "activity_extraction_error": message,
-        },
-    )
-
-
 async def _execute_activity_extraction(
     article_id: str,
     run_id: str,
@@ -150,6 +138,8 @@ async def _execute_activity_extraction(
                 "status": "fallback_required",
                 "error": message,
                 "finished_at": _now(),
+                "locked_at": None,
+                "locked_by": None,
             },
         )
         await article_repo.update_article(
@@ -162,7 +152,10 @@ async def _execute_activity_extraction(
         raise ValueError(message)
 
     try:
-        output, raw_output_text, model = extract_activities_with_llm(input_snapshot)
+        output, raw_output_text, model = await asyncio.to_thread(
+            extract_activities_with_llm,
+            input_snapshot,
+        )
         raw_output = output.model_dump(mode="json")
 
         if not output.is_activity_article:
@@ -175,6 +168,8 @@ async def _execute_activity_extraction(
                     "raw_output": raw_output,
                     "raw_output_text": raw_output_text,
                     "finished_at": _now(),
+                    "locked_at": None,
+                    "locked_by": None,
                 },
             )
             await article_repo.update_article(
@@ -209,6 +204,8 @@ async def _execute_activity_extraction(
                 "raw_output": raw_output,
                 "raw_output_text": raw_output_text,
                 "finished_at": _now(),
+                "locked_at": None,
+                "locked_by": None,
             },
         )
         await article_repo.update_article(
@@ -233,6 +230,8 @@ async def _execute_activity_extraction(
                 "status": "failed",
                 "error": str(exc),
                 "finished_at": _now(),
+                "locked_at": None,
+                "locked_by": None,
             },
         )
         await article_repo.update_article(
@@ -245,19 +244,93 @@ async def _execute_activity_extraction(
         raise
 
 
-def _run_activity_extraction_thread(article_id: str, run_id: str) -> None:
+async def _run_claimed_activity_extraction(run: dict[str, Any]) -> None:
+    run_id = str(run.get("id") or "")
+    article_id = str(run.get("article_id") or "")
+    if not run_id or not article_id:
+        logger.error(f"[activities.worker] invalid run payload={run}")
+        return
+
     try:
-        asyncio.run(_execute_activity_extraction(article_id, run_id))
+        await _execute_activity_extraction(article_id, run_id)
     except Exception as exc:
         logger.exception(
-            f"[activities.extract.background] failed article_id={article_id} run_id={run_id}"
+            f"[activities.worker] failed article_id={article_id} run_id={run_id}"
         )
+
+
+async def _activity_extraction_worker_loop(worker_id: str, stop_event: asyncio.Event) -> None:
+    logger.info(f"[activities.worker] started worker_id={worker_id}")
+    while not stop_event.is_set():
         try:
-            asyncio.run(_mark_extraction_thread_failure(article_id, run_id, exc))
-        except Exception:
-            logger.exception(
-                f"[activities.extract.background] failed to mark run failure run_id={run_id}"
+            stale_before = (
+                datetime.now(timezone.utc) - timedelta(minutes=STALE_PROCESSING_MINUTES)
+            ).isoformat()
+            run = await activity_run_repo.claim_next_queued_run(
+                worker_id=worker_id,
+                stale_before=stale_before,
             )
+            if not run:
+                try:
+                    await asyncio.wait_for(
+                        stop_event.wait(),
+                        timeout=WORKER_POLL_INTERVAL_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    pass
+                continue
+
+            await article_repo.update_article(
+                str(run.get("article_id") or ""),
+                {
+                    "activity_extraction_status": "processing",
+                    "activity_extraction_error": "",
+                },
+            )
+            await _run_claimed_activity_extraction(run)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception(f"[activities.worker] loop error worker_id={worker_id}: {exc}")
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=WORKER_POLL_INTERVAL_SECONDS)
+            except asyncio.TimeoutError:
+                pass
+    logger.info(f"[activities.worker] stopped worker_id={worker_id}")
+
+
+async def start_activity_extraction_workers() -> None:
+    global _worker_stop_event
+    if not WORKER_ENABLED:
+        logger.info("[activities.worker] disabled by ACTIVITY_EXTRACTION_WORKER_ENABLED")
+        return
+    if _worker_tasks:
+        return
+
+    _worker_stop_event = asyncio.Event()
+    base_id = f"{socket.gethostname()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    for index in range(WORKER_CONCURRENCY):
+        worker_id = f"{base_id}-{index + 1}"
+        _worker_tasks.append(
+            asyncio.create_task(
+                _activity_extraction_worker_loop(worker_id, _worker_stop_event),
+                name=f"activity-extraction-worker-{index + 1}",
+            )
+        )
+    logger.info(
+        f"[activities.worker] started workers count={len(_worker_tasks)} "
+        f"poll_interval={WORKER_POLL_INTERVAL_SECONDS}s"
+    )
+
+
+async def stop_activity_extraction_workers() -> None:
+    global _worker_stop_event
+    if _worker_stop_event:
+        _worker_stop_event.set()
+    if _worker_tasks:
+        await asyncio.gather(*_worker_tasks, return_exceptions=True)
+        _worker_tasks.clear()
+    _worker_stop_event = None
 
 
 async def start_activity_extraction(article_id: str) -> dict[str, Any]:
@@ -265,18 +338,18 @@ async def start_activity_extraction(article_id: str) -> dict[str, Any]:
     if not article_rows:
         raise ValueError("文章不存在")
 
-    processing_run = await activity_run_repo.get_latest_processing_run_by_article(
-        article_id
-    )
-    if processing_run:
-        if _is_stale_processing_run(processing_run):
-            run_id = str(processing_run.get("id") or "")
+    active_run = await activity_run_repo.get_latest_active_run_by_article(article_id)
+    if active_run:
+        if active_run.get("status") == "processing" and _is_stale_processing_run(active_run):
+            run_id = str(active_run.get("id") or "")
             await activity_run_repo.update_run(
                 run_id,
                 {
                     "status": "failed",
                     "error": "活动抽取任务超时未完成，已标记为失败",
                     "finished_at": _now(),
+                    "locked_at": None,
+                    "locked_by": None,
                 },
             )
             await article_repo.update_article(
@@ -288,9 +361,9 @@ async def start_activity_extraction(article_id: str) -> dict[str, Any]:
             )
         else:
             return {
-                "run_id": processing_run.get("id"),
+                "run_id": active_run.get("id"),
                 "article_id": article_id,
-                "status": "processing",
+                "status": active_run.get("status") or "queued",
                 "already_running": True,
             }
 
@@ -298,22 +371,20 @@ async def start_activity_extraction(article_id: str) -> dict[str, Any]:
         run = await activity_run_repo.create_run(
             {
                 "article_id": article_id,
-                "status": "processing",
+                "status": "queued",
                 "model": "",
                 "prompt_version": PROMPT_VERSION,
                 "input_snapshot": {},
-                "started_at": _now(),
+                "queued_at": _now(),
             }
         )
     except Exception as exc:
-        processing_run = await activity_run_repo.get_latest_processing_run_by_article(
-            article_id
-        )
-        if processing_run:
+        active_run = await activity_run_repo.get_latest_active_run_by_article(article_id)
+        if active_run:
             return {
-                "run_id": processing_run.get("id"),
+                "run_id": active_run.get("id"),
                 "article_id": article_id,
-                "status": "processing",
+                "status": active_run.get("status") or "queued",
                 "already_running": True,
             }
         raise exc
@@ -330,16 +401,9 @@ async def start_activity_extraction(article_id: str) -> dict[str, Any]:
         },
     )
 
-    ThreadManager(
-        target=_run_activity_extraction_thread,
-        name=f"activity-extraction-{str(article_id)[:16]}",
-        args=(article_id, str(run_id)),
-        daemon=True,
-    ).start()
-
     return {
         "run_id": run_id,
         "article_id": article_id,
-        "status": "processing",
+        "status": "queued",
         "already_running": False,
     }

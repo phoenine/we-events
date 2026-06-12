@@ -131,7 +131,7 @@ export default function ActivitiesPage() {
         runs.map(async (item) => {
           try {
             const run: any = await getActivityExtractionRun(item.runId);
-            if (run?.status !== "processing") {
+            if (!["queued", "processing"].includes(run?.status)) {
               finishedRunIds.add(item.runId);
             }
           } catch {

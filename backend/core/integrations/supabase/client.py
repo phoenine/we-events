@@ -248,5 +248,14 @@ class SupabaseClient:
             logger.error(f"Upsert数据到表 {table} 失败: {e}")
             raise
 
+    async def rpc(self, function_name: str, params: Optional[Dict[str, Any]] = None):
+        """调用 Postgres RPC 函数。"""
+        try:
+            response = self.get_client().rpc(function_name, params or {}).execute()
+            return response.data if response.data else []
+        except Exception as e:
+            logger.error(f"调用RPC {function_name} 失败: {e}")
+            raise
+
 
 supabase_client = SupabaseClient()

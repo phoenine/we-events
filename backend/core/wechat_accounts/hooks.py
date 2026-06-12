@@ -46,14 +46,6 @@ def build_wx_gather_hooks() -> WxGatherHooks:
         except Exception:
             pass
 
-        # 2) 清理任务队列（best-effort）
-        try:
-            from core.jobs import TaskQueue
-
-            TaskQueue.delete_queue()
-        except Exception:
-            pass
-
         logger.error("公众号平台登录失效,请重新登录")
 
     return WxGatherHooks(on_update_wechat_account=_on_update_wechat_account, on_error=_on_error)
