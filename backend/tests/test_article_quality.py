@@ -2,6 +2,7 @@ import unittest
 
 from core.articles.quality import (
     ArticleContentQuality,
+    build_content_quality_update,
     classify_article_content,
     content_fetch_status_for_quality,
 )
@@ -43,6 +44,25 @@ class ArticleQualityTest(unittest.TestCase):
 
         self.assertEqual(quality, ArticleContentQuality.IMAGE_ONLY)
         self.assertEqual(content_fetch_status_for_quality(quality), "fallback_required")
+
+    def test_url_plus_empty_placeholder_without_images_is_failed(self):
+        quality = classify_article_content(
+            {
+                "url": "https://mp.weixin.qq.com/s/example",
+                "content": '<p><a href="https://mp.weixin.qq.com/s/example">https://mp.weixin.qq.com/s/example</a></p><p>暂无正文</p>',
+                "content_md": "[https://mp.weixin.qq.com/s/example](https://mp.weixin.qq.com/s/example)\n\n暂无正文",
+            },
+            image_count=0,
+        )
+
+        self.assertEqual(quality, ArticleContentQuality.EMPTY)
+        self.assertEqual(content_fetch_status_for_quality(quality), "failed")
+
+    def test_quality_update_records_reason_for_image_only_fallback(self):
+        update = build_content_quality_update({"content": ""}, image_count=1)
+
+        self.assertEqual(update["content_fetch_status"], "fallback_required")
+        self.assertIn("图片", update["content_fetch_error"])
 
 
 if __name__ == "__main__":

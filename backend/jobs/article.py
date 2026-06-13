@@ -5,9 +5,7 @@ from core.common.utils.async_tools import run_sync
 from core.integrations.supabase.storage import supabase_storage_articles
 from core.articles.content_format import format_content
 from core.articles.quality import (
-    classify_article_content,
-    content_fetch_error_for_quality,
-    content_fetch_status_for_quality,
+    build_content_quality_update,
 )
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
@@ -229,9 +227,7 @@ def UpdateArticle(art: dict, check_exist: bool = False):
 
         art, image_mappings = _upload_article_images(dict(art))
         art = _ensure_content_markdown(art)
-        content_quality = classify_article_content(art, image_count=len(image_mappings))
-        art["content_fetch_status"] = content_fetch_status_for_quality(content_quality)
-        art["content_fetch_error"] = content_fetch_error_for_quality(content_quality)
+        art.update(build_content_quality_update(art, image_count=len(image_mappings)))
         if existing_article:
             art["activity_extraction_status"] = existing_article.get(
                 "activity_extraction_status"

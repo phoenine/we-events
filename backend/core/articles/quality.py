@@ -31,6 +31,8 @@ EMPTY_PLACEHOLDERS = {
     "无正文",
 }
 
+URL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
+
 
 def _plain_text(value: str) -> str:
     html = str(value or "")
@@ -42,6 +44,7 @@ def _plain_text(value: str) -> str:
         text = html.strip()
     text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)
     text = re.sub(r"\[[^\]]*\]\([^)]+\)", "", text)
+    text = URL_RE.sub("", text)
     return text.strip()
 
 
@@ -102,3 +105,15 @@ def content_fetch_error_for_quality(quality: ArticleContentQuality) -> str:
     if quality == ArticleContentQuality.INACCESSIBLE:
         return "微信文章不可访问或已删除"
     return ""
+
+
+def build_content_quality_update(
+    article: dict[str, Any],
+    *,
+    image_count: int | None = None,
+) -> dict[str, str]:
+    quality = classify_article_content(article, image_count=image_count)
+    return {
+        "content_fetch_status": content_fetch_status_for_quality(quality),
+        "content_fetch_error": content_fetch_error_for_quality(quality),
+    }
