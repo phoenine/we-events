@@ -75,6 +75,9 @@ class Wx:
 
         # owner 信息移交 LockManager
 
+        # 新登录流程开始前必须清掉上一轮二维码 URL。
+        # GetCode 会立即返回；如果这里残留旧 URL，前端会展示过期二维码并停止轮询新二维码。
+        self._set_qr_url(None)
         self.Clean()
 
     def _set_qr_url(self, url: str | None):
@@ -446,10 +449,9 @@ class Wx:
         """启动浏览器并打开登录页，返回 page。"""
         driver = self.controller
         logger.info("正在启动浏览器...")
-        # 显式使用 firefox，避免系统 Chrome 依赖
         for i in range(2):
             try:
-                driver.start_browser(anti_crawler=False, browser_name="firefox")
+                driver.start_browser(anti_crawler=True)
                 break
             except Exception as e:
                 if i == 1:
@@ -469,12 +471,56 @@ class Wx:
 
         logger.info("正在加载登录页面...")
         page.wait_for_load_state("domcontentloaded")
+        try:
+            env = page.evaluate(
+                """() => ({
+                    userAgent: navigator.userAgent,
+                    webdriver: navigator.webdriver,
+                    languages: navigator.languages,
+                    platform: navigator.platform,
+                })"""
+            )
+            logger.info(f"[wx-login-env] {env}")
+        except Exception as e:
+            logger.warning(f"[wx-login-env] inspect failed: {e}")
         return page
 
     def _capture_qr_screenshot(self, page):
         """定位二维码并截图，返回 bytes。"""
         qr_tag = "img.login__type__container__scan__qrcode"
-        qrcode = page.wait_for_selector(qr_tag, state="visible", timeout=15000)
+        try:
+            qrcode = page.wait_for_selector(qr_tag, state="visible", timeout=15000)
+        except Exception as e:
+            try:
+                diagnostics = page.evaluate(
+                    """(selector) => {
+                        const img = document.querySelector(selector);
+                        return {
+                            url: location.href,
+                            title: document.title,
+                            readyState: document.readyState,
+                            bodyText: (document.body && document.body.innerText || '').slice(0, 500),
+                            imgExists: Boolean(img),
+                            imgVisible: img ? getComputedStyle(img).visibility : '',
+                            imgDisplay: img ? getComputedStyle(img).display : '',
+                            imgSrc: img ? img.getAttribute('src') : '',
+                            imgNaturalWidth: img ? img.naturalWidth : 0,
+                            imgNaturalHeight: img ? img.naturalHeight : 0,
+                        };
+                    }""",
+                    arg=qr_tag,
+                )
+            except Exception:
+                diagnostics = {}
+            try:
+                os.makedirs("data/cache", exist_ok=True)
+                ts = int(time.time() * 1000)
+                fail_page = f"data/cache/qr-hidden-{ts}.png"
+                page.screenshot(path=fail_page, full_page=True)
+                logger.warning(f"[wx-qr] hidden diagnostics={diagnostics} screenshot={fail_page}")
+            except Exception:
+                logger.warning(f"[wx-qr] hidden diagnostics={diagnostics}")
+            raise
         if qrcode is None:
             raise Exception("未找到登录二维码图片元素")
 
@@ -495,10 +541,12 @@ class Wx:
 
         src = qrcode.get_attribute("src") or ""
         logger.info(f"[wx-qr] img src={src}")
+        # 反爬脚本会改写 canvas/webgl 指纹；二维码不要再走页面 canvas 导出。
+        qr_source = "element_screenshot"
         img_bytes = qrcode.screenshot()
         head = img_bytes[:8].hex() if img_bytes else ""
         logger.info(
-            f"[wx-qr] captured selector={qr_tag} bytes={len(img_bytes or b'')} head={head}"
+            f"[wx-qr] captured selector={qr_tag} source={qr_source} bytes={len(img_bytes or b'')} head={head}"
         )
         try:
             os.makedirs("data/cache", exist_ok=True)

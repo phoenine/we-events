@@ -1,0 +1,49 @@
+import unittest
+
+from core.articles.quality import (
+    ArticleContentQuality,
+    classify_article_content,
+    content_fetch_status_for_quality,
+)
+
+
+class ArticleQualityTest(unittest.TestCase):
+    def test_empty_article_without_images_is_failed(self):
+        quality = classify_article_content({"content": "", "content_md": ""}, image_count=0)
+
+        self.assertEqual(quality, ArticleContentQuality.EMPTY)
+        self.assertEqual(content_fetch_status_for_quality(quality), "failed")
+
+    def test_empty_article_with_images_requires_fallback(self):
+        quality = classify_article_content({"content": "", "images": ["https://example.com/a.jpg"]})
+
+        self.assertEqual(quality, ArticleContentQuality.IMAGE_ONLY)
+        self.assertEqual(content_fetch_status_for_quality(quality), "fallback_required")
+
+    def test_wechat_unavailable_article_is_failed(self):
+        quality = classify_article_content({"content": "该内容已被发布者删除"})
+
+        self.assertEqual(quality, ArticleContentQuality.INACCESSIBLE)
+        self.assertEqual(content_fetch_status_for_quality(quality), "failed")
+
+    def test_image_html_is_image_only_not_invalid(self):
+        quality = classify_article_content(
+            {"content": '<p><img src="https://example.com/a.jpg" /></p>'},
+            image_count=1,
+        )
+
+        self.assertEqual(quality, ArticleContentQuality.IMAGE_ONLY)
+        self.assertEqual(content_fetch_status_for_quality(quality), "fallback_required")
+
+    def test_markdown_image_without_text_is_image_only(self):
+        quality = classify_article_content(
+            {"content_md": "![](https://example.com/a.jpg)"},
+            image_count=1,
+        )
+
+        self.assertEqual(quality, ArticleContentQuality.IMAGE_ONLY)
+        self.assertEqual(content_fetch_status_for_quality(quality), "fallback_required")
+
+
+if __name__ == "__main__":
+    unittest.main()

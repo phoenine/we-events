@@ -274,6 +274,14 @@ class ArticleRepository:
         """同步删除文章（用于兼容同步代码）"""
         return run_sync(self.delete_article(article_id))
 
+    def sync_get_article_images(self, article_id: str):
+        """同步获取文章图片映射（用于兼容同步代码）。"""
+        return run_sync(self.get_article_images(article_id))
+
+    def sync_delete_article_images_by_article(self, article_id: str):
+        """同步删除文章图片映射（用于兼容同步代码）。"""
+        return run_sync(self.delete_article_images_by_article(article_id))
+
     def sync_replace_article_images(self, article_id: str, images: List[Dict[str, Any]]):
         """同步替换文章图片映射（用于兼容同步代码）。"""
         return run_sync(self.replace_article_images(article_id, images))

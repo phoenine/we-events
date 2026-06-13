@@ -48,7 +48,7 @@ backend/
 ```bash
 pip install -r requirements.txt
 playwright install
-playwright install firefox
+playwright install chromium
 ```
 
 ### 4.3 配置

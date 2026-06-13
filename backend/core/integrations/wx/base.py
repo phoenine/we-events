@@ -74,6 +74,20 @@ class WxGather:
             pass
         return ""
 
+    def _load_persisted_user_agent(self) -> str:
+        """best-effort: 从持久化会话读取登录时浏览器 UA。"""
+        try:
+            from driver.session.store import Store
+
+            sess = Store.load_session()
+            if isinstance(sess, dict):
+                ua = sess.get("user_agent")
+                if ua:
+                    return str(ua)
+        except Exception:
+            pass
+        return ""
+
     def all_count(self):
         if getattr(self, "articles", None) is not None:
             return len(self.articles)
@@ -189,13 +203,14 @@ class WxGather:
             cookies = ""
 
         # 2) User-Agent（公开接口）
-        ua = ""
-        try:
-            from driver.browser.playwright import get_realistic_user_agent
+        ua = self._load_persisted_user_agent()
+        if not ua:
+            try:
+                from driver.browser.playwright import get_realistic_user_agent
 
-            ua = str(get_realistic_user_agent(mobile_mode=False) or "")
-        except Exception:
-            ua = ""
+                ua = str(get_realistic_user_agent(mobile_mode=False) or "")
+            except Exception:
+                ua = ""
         if not ua:
             ua = random.choice(_FALLBACK_USER_AGENTS) if _FALLBACK_USER_AGENTS else "Mozilla/5.0"
 
