@@ -1,4 +1,3 @@
-import threading
 import asyncio
 import argparse
 import uvicorn
@@ -11,7 +10,6 @@ from core.common.base import VERSION, API_BASE
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-job", help="启动任务", default=False)
     parser.add_argument("-init", help="初始化数据库,初始化用户", default=False)
     return parser.parse_known_args()[0]
 
@@ -28,12 +26,6 @@ if __name__ == "__main__":
         import init_sys as init
 
         asyncio.run(init.init())
-    if args.job == "True" and settings.enable_job:
-        from jobs.wechat_accounts import start_all_task
-
-        threading.Thread(target=start_all_task, daemon=False).start()
-    else:
-        logger.warning("未开启定时任务")
     logger.info("启动服务器")
     auto_reload = settings.auto_reload
     workers = settings.threads
@@ -51,8 +43,8 @@ if __name__ == "__main__":
         run_kwargs.update(
             {
                 "reload": True,
-                "reload_dirs": ["core", "web_ui"],
-                "reload_excludes": ["web_ui", "data"],
+                "reload_dirs": ["apis", "core", "driver", "schemas"],
+                "reload_excludes": ["data"],
             }
         )
 

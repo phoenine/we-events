@@ -2,7 +2,7 @@ import { DeleteOutlined, PlusOutlined, SyncOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   createWechatAccountGroup,
   deleteWechatAccountGroup,
@@ -10,10 +10,15 @@ import {
   syncWechatAccountGroupArticles,
   updateWechatAccountGroup,
 } from "@/api/wechatAccountGroups";
-import { listWechatAccounts } from "@/api/wechatAccounts";
+import { getArticleCollectionRun, listWechatAccounts } from "@/api/wechatAccounts";
 import EmptyState from "@/components/common/EmptyState";
 import PageHeader from "@/components/common/PageHeader";
 import type { ApiList, WechatAccount, WechatAccountGroup } from "@/types/api";
+import {
+  addArticleCollectionRun,
+  loadArticleCollectionRuns,
+  removeArticleCollectionRuns,
+} from "@/utils/articleCollectionRuns";
 
 function normalize(data: ApiList<WechatAccountGroup> | WechatAccountGroup[] | undefined) {
   if (!data) return [];
@@ -34,6 +39,7 @@ function parseGroupAccountIds(value: WechatAccountGroup["wechat_account_ids"]) {
 export default function WechatAccountGroupsPage() {
   const [editing, setEditing] = useState<WechatAccountGroup | null>(null);
   const [syncing, setSyncing] = useState<WechatAccountGroup | null>(null);
+  const [activeCollectionRuns, setActiveCollectionRuns] = useState(loadArticleCollectionRuns);
   const [form] = Form.useForm();
   const [syncForm] = Form.useForm();
   const queryClient = useQueryClient();
@@ -64,14 +70,53 @@ export default function WechatAccountGroupsPage() {
     mutationFn: (values: { start_page?: number; end_page?: number }) =>
       syncWechatAccountGroupArticles(String(syncing?.id || ""), values),
     onSuccess: (data: any) => {
+      if (data?.run_id) {
+        addArticleCollectionRun({ runId: data.run_id });
+        setActiveCollectionRuns((runs) => {
+          if (runs.some((item) => item.runId === data.run_id)) return runs;
+          return [...runs, { runId: data.run_id }];
+        });
+      }
       const started = data?.started_account_ids?.length || 0;
       const skipped = data?.skipped_accounts?.length || 0;
-      message.success(`已触发 ${started} 个公众号采集${skipped ? `，跳过 ${skipped} 个` : ""}`);
+      message.success(`已加入队列 ${started} 个公众号${skipped ? `，跳过 ${skipped} 个` : ""}`);
       setSyncing(null);
       syncForm.resetFields();
     },
     onError: (error) => message.error(error instanceof Error ? error.message : "分组采集失败"),
   });
+  useEffect(() => {
+    if (!activeCollectionRuns.length) return;
+
+    const timer = window.setInterval(async () => {
+      const finishedRunIds = new Set<string>();
+      await Promise.all(
+        activeCollectionRuns.map(async (item) => {
+          try {
+            const run: any = await getArticleCollectionRun(item.runId);
+            if (["queued", "processing"].includes(run?.status)) return;
+            finishedRunIds.add(item.runId);
+            if (run?.status === "success" || run?.status === "partial_success") {
+              message.success(`文章采集完成${run?.articles_count ? `，采集 ${run.articles_count} 篇` : ""}`);
+            } else if (run?.status === "failed") {
+              message.error(run?.error || "文章采集失败");
+            }
+          } catch {
+            finishedRunIds.add(item.runId);
+          }
+        })
+      );
+      if (finishedRunIds.size) {
+        setActiveCollectionRuns(removeArticleCollectionRuns(finishedRunIds));
+        queryClient.invalidateQueries({ queryKey: ["wechat-account-groups"] });
+        queryClient.invalidateQueries({ queryKey: ["wechat-accounts"] });
+        queryClient.invalidateQueries({ queryKey: ["articles"] });
+      }
+    }, 3000);
+
+    return () => window.clearInterval(timer);
+  }, [activeCollectionRuns, message, queryClient]);
+
   const accountNameById = new Map(
     (accountsQuery.data?.list || []).map((account: WechatAccount) => [
       account.id,
@@ -142,16 +187,19 @@ export default function WechatAccountGroupsPage() {
         title="公众号分组"
         subtitle="按业务主题组织公众号来源。"
         actions={
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => {
-              form.resetFields();
-              setEditing({} as WechatAccountGroup);
-            }}
-          >
-            新建分组
-          </Button>
+          <>
+            {activeCollectionRuns.length > 0 && <Tag color="processing">采集中 {activeCollectionRuns.length}</Tag>}
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                form.resetFields();
+                setEditing({} as WechatAccountGroup);
+              }}
+            >
+              新建分组
+            </Button>
+          </>
         }
       />
       <Card className="soft-card">

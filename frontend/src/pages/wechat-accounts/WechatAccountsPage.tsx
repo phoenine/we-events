@@ -9,21 +9,28 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Avatar, Button, Card, Input, Popconfirm, Space, Table, Tag, Tooltip } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   deleteWechatAccount,
+  getArticleCollectionRun,
   listWechatAccounts,
   syncWechatAccountArticles,
 } from "@/api/wechatAccounts";
 import EmptyState from "@/components/common/EmptyState";
 import PageHeader from "@/components/common/PageHeader";
 import type { WechatAccount } from "@/types/api";
+import {
+  addArticleCollectionRun,
+  loadArticleCollectionRuns,
+  removeArticleCollectionRuns,
+} from "@/utils/articleCollectionRuns";
 
 export default function WechatAccountsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [kw, setKw] = useState("");
+  const [activeCollectionRuns, setActiveCollectionRuns] = useState(loadArticleCollectionRuns);
   const queryClient = useQueryClient();
   const { message } = App.useApp();
   const query = useQuery({
@@ -33,7 +40,21 @@ export default function WechatAccountsPage() {
   });
   const sync = useMutation({
     mutationFn: (id: string) => syncWechatAccountArticles(id),
-    onSuccess: () => message.success("已触发采集任务"),
+    onSuccess: (data: any) => {
+      if (data?.run_id) {
+        addArticleCollectionRun({ runId: data.run_id });
+        setActiveCollectionRuns((runs) => {
+          if (runs.some((item) => item.runId === data.run_id)) return runs;
+          return [...runs, { runId: data.run_id }];
+        });
+      }
+      if (data?.status === "skipped") {
+        message.info("当前公众号暂不可采集");
+      } else {
+        message.success(data?.already_running ? "采集任务已在队列中" : "已加入采集队列");
+      }
+    },
+    onError: (error) => message.error(error instanceof Error ? error.message : "触发采集失败"),
   });
   const remove = useMutation({
     mutationFn: deleteWechatAccount,
@@ -42,6 +63,42 @@ export default function WechatAccountsPage() {
       queryClient.invalidateQueries({ queryKey: ["wechat-accounts"] });
     },
   });
+
+  useEffect(() => {
+    if (!activeCollectionRuns.length) return;
+
+    const timer = window.setInterval(async () => {
+      const finishedRunIds = new Set<string>();
+      await Promise.all(
+        activeCollectionRuns.map(async (item) => {
+          try {
+            const run: any = await getArticleCollectionRun(item.runId);
+            if (["queued", "processing"].includes(run?.status)) return;
+            finishedRunIds.add(item.runId);
+            if (run?.status === "success" || run?.status === "partial_success") {
+              message.success(`文章采集完成${run?.articles_count ? `，采集 ${run.articles_count} 篇` : ""}`);
+            } else if (run?.status === "failed") {
+              message.error(run?.error || "文章采集失败");
+            }
+          } catch {
+            finishedRunIds.add(item.runId);
+          }
+        })
+      );
+      if (finishedRunIds.size) {
+        setActiveCollectionRuns(removeArticleCollectionRuns(finishedRunIds));
+        queryClient.invalidateQueries({ queryKey: ["wechat-accounts"] });
+        queryClient.invalidateQueries({ queryKey: ["articles"] });
+      }
+    }, 3000);
+
+    return () => window.clearInterval(timer);
+  }, [activeCollectionRuns, message, queryClient]);
+
+  const activeCollectionRunCount = useMemo(
+    () => activeCollectionRuns.length,
+    [activeCollectionRuns]
+  );
 
   const columns: ColumnsType<WechatAccount> = [
     {
@@ -130,6 +187,7 @@ export default function WechatAccountsPage() {
             <Button icon={<ReloadOutlined />} onClick={() => query.refetch()}>
               刷新
             </Button>
+            {activeCollectionRunCount > 0 && <Tag color="processing">采集中 {activeCollectionRunCount}</Tag>}
             <Link to="/wechat-accounts/add">
               <Button type="primary" icon={<PlusOutlined />}>
                 添加公众号

@@ -57,6 +57,10 @@ export function syncWechatAccountArticles(
   });
 }
 
+export function getArticleCollectionRun(runId: string) {
+  return http.get(`/wx/wechat-accounts/collection-runs/${runId}`);
+}
+
 export function searchWechatAccounts(kw: string, params?: { offset?: number; limit?: number }) {
   return http.get(`/wx/wechat-accounts/search/${kw}`, {
     params: {

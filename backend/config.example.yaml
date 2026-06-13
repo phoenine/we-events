@@ -1,18 +1,16 @@
-app_name: ${APP_NAME:-wx-harvester}
+app_name: ${APP_NAME:-we-events}
 server:
   #服务名称
-  name: ${SERVER_NAME:-wx-harvester}
+  name: ${SERVER_NAME:-we-events}
   #前端显示名称
-  web_name: ${WEB_NAME:-WxHarvester微信公众号采集助手}
-  #启动JOB定时任务，默认为True
-  enable_job: ${ENABLE_JOB:-True}
+  web_name: ${WEB_NAME:-we-events}
   #代码修改自动重启服务，默认为False
   auto_reload: ${AUTO_RELOAD:-False}
   #最大线程数 默认2个线程，不建议超过4个线程
   threads: ${THREADS:-4}
-user_agent: ${USER_AGENT:-Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36/WeRss}
+user_agent: ${USER_AGENT:-Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36}
 
-#定时任务执行每篇稿件间隔时间 单位秒 默认10s 允许值 1-60秒之间
+#文章采集时每篇文章抓取间隔时间，单位秒
 interval: ${SPAN_INTERVAL:- 10}
 
 #API服务端口
@@ -42,12 +40,6 @@ gather:
   content: ${GATHER_CONTENT:-True}
   #采集模式，web模式（可采集到发布链接)，api模式（可采集临时链接），app模式（采集最新消息）
   model: ${GATHER_MODEL:-app}
-  #是否自动检查未采集文章内容，默认False
-  content_auto_check: ${GATHER_CONTENT_AUTO_CHECK:-False}
-  #自动检查未采集文章内容的时间间隔 单位秒默认59分钟 允许值 1-59分钟之间 默认59分钟
-  content_auto_interval: ${GATHER_CONTENT_AUTO_INTERVAL:-59}
-  #内容修正模式，默认web 允许值 web、api
-  content_mode: ${GATHER_CONTENT_MODE:-web}
 #安全配置
 safe:
   # 需要隐藏的配置信息，用逗号分隔
@@ -55,7 +47,7 @@ safe:
   # 授权加密KEY
   lic_key: "${SAFE_LIC_KEY:-PHOENINE-SECURE-LIC-KEY-1234567890}"
 log:
-  #日志文件路径，默认写入 ./data/logs/wx-harvester.log，可通过 LOG_FILE 覆盖
-  file: ${LOG_FILE:-./data/logs/wx-harvester.log}
+  #日志文件路径，默认写入 ./data/logs/we-events.log，可通过 LOG_FILE 覆盖
+  file: ${LOG_FILE:-./data/logs/we-events.log}
   #日志级别，默认为INFO，可选DEBUG, INFO, WARNING, ERROR, CRITICAL
   level: ${LOG_LEVEL:-INFO}

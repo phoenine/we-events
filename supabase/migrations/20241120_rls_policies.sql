@@ -7,6 +7,8 @@ alter table public.profiles enable row level security;
 alter table public.wechat_accounts enable row level security;
 alter table public.articles enable row level security;
 alter table public.article_images enable row level security;
+alter table public.article_collection_runs enable row level security;
+alter table public.article_collection_items enable row level security;
 alter table public.activities enable row level security;
 alter table public.activity_extraction_runs enable row level security;
 alter table public.wechat_account_groups enable row level security;
@@ -71,6 +73,23 @@ to service_role
 using (true)
 with check (true);
 
+drop policy if exists "article_collection_runs_service_role_all" on public.article_collection_runs;
+create policy "article_collection_runs_service_role_all"
+on public.article_collection_runs for all
+to service_role
+using (true)
+with check (true);
+
+drop policy if exists "article_collection_items_service_role_all" on public.article_collection_items;
+create policy "article_collection_items_service_role_all"
+on public.article_collection_items for all
+to service_role
+using (true)
+with check (true);
+
+revoke all on function public.claim_next_article_collection_item(text, timestamptz) from public;
+grant execute on function public.claim_next_article_collection_item(text, timestamptz) to service_role;
+
 drop policy if exists "activities_service_role_all" on public.activities;
 create policy "activities_service_role_all"
 on public.activities for all
@@ -84,6 +103,9 @@ on public.activity_extraction_runs for all
 to service_role
 using (true)
 with check (true);
+
+revoke all on function public.claim_next_activity_extraction_run(text, timestamptz) from public;
+grant execute on function public.claim_next_activity_extraction_run(text, timestamptz) to service_role;
 
 drop policy if exists "wechat_account_groups_service_role_all" on public.wechat_account_groups;
 create policy "wechat_account_groups_service_role_all"

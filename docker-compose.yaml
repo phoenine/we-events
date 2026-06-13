@@ -8,13 +8,12 @@ services:
     environment:
       SUPABASE_URL: https://ljzbrkbgfifkporwgesc.supabase.co
       TZ: Asia/Shanghai
-      APP_NAME: wx-activity-subscription-assistant
-      SERVER_NAME: wx-activity-subscription-assistant
-      WEB_NAME: 微信活动订阅助手
+      APP_NAME: we-events
+      SERVER_NAME: we-events
+      WEB_NAME: we-events
       SECRET_KEY: ${SECRET_KEY_BASE:-UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq}
       USERNAME: ${USERNAME:-admin@phoenine.top}
       PASSWORD: ${PASSWORD:-WxHelper@2025!}
-      ENABLE_JOB: ${ENABLE_JOB:-false}
       THREADS: ${THREADS:-1}
       PORT: 38001
       DEBUG: ${DEBUG:-false}

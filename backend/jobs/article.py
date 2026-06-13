@@ -216,10 +216,24 @@ def UpdateArticle(art: dict, check_exist: bool = False):
     if settings.debug:
         pass
     try:
+        article_id = str((art or {}).get("id") or "")
+        existing_article = None
+        if article_id:
+            rows = article_repo.sync_get_articles(filters={"id": article_id}, limit=1)
+            existing_article = rows[0] if rows else None
+
         art, image_mappings = _upload_article_images(dict(art))
         art = _ensure_content_markdown(art)
         art["content_fetch_status"] = "fetched" if art.get("content") else "pending"
-        art["activity_extraction_status"] = "pending"
+        if existing_article:
+            art["activity_extraction_status"] = existing_article.get(
+                "activity_extraction_status"
+            ) or "pending"
+            art["activity_extraction_error"] = existing_article.get(
+                "activity_extraction_error"
+            )
+        else:
+            art["activity_extraction_status"] = "pending"
         art = _normalize_article_for_db(art)
         # 使用 Supabase 创建文章
         result = article_repo.sync_create_article(art)

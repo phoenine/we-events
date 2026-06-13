@@ -1,4 +1,4 @@
-# 微信活动订阅助手 - Frontend
+# we-events Frontend
 
 前端已从旧 Vue 版本迁移为 React + Vite + TypeScript，主组件库使用 Ant Design。前端只通过 FastAPI 访问业务接口，不直接连接 Supabase。
 

@@ -1,16 +1,11 @@
 import json
-import threading
-import time
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from datetime import datetime, timezone
 from core.wechat_account_groups import wechat_account_group_repo
-from core.wechat_accounts import wechat_account_repo
-from core.wechat_accounts.collector import collect_wechat_account_articles
+from core.articles.collection_service import enqueue_group_collection
 from core.integrations.supabase.auth import get_current_user
 from core.common.log import logger
-from core.common.runtime_settings import runtime_settings
 from schemas import success_response, error_response, WeChatAccountGroupCreate
-from jobs.article import UpdateArticle
 
 router = APIRouter(prefix="/wechat-account-groups", tags=["公众号分组管理"])
 
@@ -51,35 +46,6 @@ def _to_api_group(group: dict, account_ids: list[str] | None = None) -> dict:
     item["wechat_account_ids"] = json.dumps(ids, ensure_ascii=False)
     item["wechat_account_count"] = len(ids)
     return item
-
-
-def _last_sync_epoch(account: dict) -> int:
-    if account.get("update_time") is not None:
-        try:
-            return int(account.get("update_time") or 0)
-        except Exception:
-            return 0
-    if account.get("last_fetch"):
-        try:
-            dt = datetime.fromisoformat(str(account.get("last_fetch")).replace("Z", "+00:00"))
-            return int(dt.timestamp())
-        except Exception:
-            return 0
-    return 0
-
-
-def _collect_group_accounts(accounts: list[dict], start_page: int, end_page: int):
-    for account in accounts:
-        account_id = account.get("id")
-        try:
-            collect_wechat_account_articles(
-                account,
-                on_article=UpdateArticle,
-                start_page=start_page,
-                max_page=end_page,
-            )
-        except Exception as e:
-            logger.error(f"[wechat-account-group-sync] account_id={account_id} failed: {e}")
 
 
 @router.get("", summary="获取公众号分组列表", description="分页获取所有公众号分组信息")
@@ -278,13 +244,6 @@ async def sync_wechat_account_group_articles(
     _current_user: dict = Depends(get_current_user),
 ):
     try:
-        group = await wechat_account_group_repo.get_group_by_id(group_id)
-        if not group:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=error_response(code=404, message="公众号分组不存在"),
-            )
-
         start_page = int((payload or {}).get("start_page", 0) or 0)
         end_page = int((payload or {}).get("end_page", 1) or 1)
         if start_page < 0 or end_page < 1:
@@ -293,57 +252,18 @@ async def sync_wechat_account_group_articles(
                 detail=error_response(code=400, message="采集页码参数不合法"),
             )
 
-        account_ids = await wechat_account_group_repo.get_wechat_account_ids_by_group(group_id)
-        if not account_ids:
-            return success_response(
-                {
-                    "group_id": group_id,
-                    "account_count": 0,
-                    "started_account_ids": [],
-                    "skipped_accounts": [],
-                },
-                message="该分组暂无公众号",
-            )
-
-        accounts = await wechat_account_repo.get_wechat_accounts_by_ids(account_ids)
-        sync_interval = await runtime_settings.get_int("sync_interval", 60)
-        now_epoch = int(time.time())
-        runnable: list[dict] = []
-        skipped: list[dict] = []
-
-        for account in accounts:
-            account_id = str(account.get("id") or "")
-            if account.get("status") == 0:
-                skipped.append({"id": account_id, "reason": "disabled"})
-                continue
-            time_span = now_epoch - _last_sync_epoch(account)
-            if time_span < sync_interval:
-                skipped.append(
-                    {
-                        "id": account_id,
-                        "reason": "cooldown",
-                        "time_span": time_span,
-                    }
-                )
-                continue
-            runnable.append(account)
-
-        if runnable:
-            threading.Thread(
-                target=_collect_group_accounts,
-                args=(runnable, start_page, end_page),
-                daemon=True,
-            ).start()
-
-        return success_response(
-            {
-                "group_id": group_id,
-                "account_count": len(accounts),
-                "started_account_ids": [str(item.get("id")) for item in runnable if item.get("id")],
-                "skipped_accounts": skipped,
-                "start_page": start_page,
-                "end_page": end_page,
-            }
+        result = await enqueue_group_collection(
+            group_id,
+            start_page=start_page,
+            max_page=end_page,
+        )
+        if not result.get("started_account_ids"):
+            return success_response(result, message="该分组暂无可采集公众号")
+        return success_response(result)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(code=400, message=str(e)),
         )
     except HTTPException:
         raise

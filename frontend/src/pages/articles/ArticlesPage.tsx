@@ -36,7 +36,11 @@ import {
   listArticles,
 } from "@/api/articles";
 import { extractArticleActivities, getActivityExtractionRun } from "@/api/activities";
-import { listWechatAccounts, syncWechatAccountArticles } from "@/api/wechatAccounts";
+import {
+  getArticleCollectionRun,
+  listWechatAccounts,
+  syncWechatAccountArticles,
+} from "@/api/wechatAccounts";
 import EmptyState from "@/components/common/EmptyState";
 import PageHeader from "@/components/common/PageHeader";
 import type { Article } from "@/types/api";
@@ -45,6 +49,11 @@ import {
   loadActivityExtractionRuns,
   removeActivityExtractionRuns,
 } from "@/utils/activityExtractionRuns";
+import {
+  addArticleCollectionRun,
+  loadArticleCollectionRuns,
+  removeArticleCollectionRuns,
+} from "@/utils/articleCollectionRuns";
 import { formatEpochSeconds } from "@/utils/time";
 
 export default function ArticlesPage() {
@@ -55,6 +64,7 @@ export default function ArticlesPage() {
   const [selected, setSelected] = useState<Article | null>(null);
   const [extractingArticleId, setExtractingArticleId] = useState<string>();
   const [activeExtractionRuns, setActiveExtractionRuns] = useState(loadActivityExtractionRuns);
+  const [activeCollectionRuns, setActiveCollectionRuns] = useState(loadArticleCollectionRuns);
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncForm] = Form.useForm();
   const queryClient = useQueryClient();
@@ -90,8 +100,19 @@ export default function ArticlesPage() {
   const syncArticles = useMutation({
     mutationFn: (values: { start_page?: number; end_page?: number }) =>
       syncWechatAccountArticles(wechatAccountId || "", values),
-    onSuccess: () => {
-      message.success("已触发采集任务");
+    onSuccess: (data: any) => {
+      if (data?.run_id) {
+        addArticleCollectionRun({ runId: data.run_id });
+        setActiveCollectionRuns((runs) => {
+          if (runs.some((item) => item.runId === data.run_id)) return runs;
+          return [...runs, { runId: data.run_id }];
+        });
+      }
+      if (data?.status === "skipped") {
+        message.info("当前公众号暂不可采集");
+      } else {
+        message.success(data?.already_running ? "采集任务已在队列中" : "已加入采集队列");
+      }
       setSyncOpen(false);
       syncForm.resetFields();
     },
@@ -135,7 +156,7 @@ export default function ArticlesPage() {
         activeExtractionRuns.map(async (item) => {
           try {
             const run: any = await getActivityExtractionRun(item.runId);
-            if (run?.status === "processing") return;
+            if (["queued", "processing"].includes(run?.status)) return;
 
             finishedRunIds.add(item.runId);
             if (run?.status === "success") {
@@ -164,6 +185,38 @@ export default function ArticlesPage() {
     return () => window.clearInterval(timer);
   }, [activeExtractionRuns, message, queryClient]);
 
+  useEffect(() => {
+    if (!activeCollectionRuns.length) return;
+
+    const timer = window.setInterval(async () => {
+      const finishedRunIds = new Set<string>();
+      await Promise.all(
+        activeCollectionRuns.map(async (item) => {
+          try {
+            const run: any = await getArticleCollectionRun(item.runId);
+            if (["queued", "processing"].includes(run?.status)) return;
+            finishedRunIds.add(item.runId);
+            if (run?.status === "success" || run?.status === "partial_success") {
+              message.success(`文章采集完成${run?.articles_count ? `，采集 ${run.articles_count} 篇` : ""}`);
+            } else if (run?.status === "failed") {
+              message.error(run?.error || "文章采集失败");
+            }
+          } catch {
+            finishedRunIds.add(item.runId);
+          }
+        })
+      );
+
+      if (finishedRunIds.size) {
+        setActiveCollectionRuns(removeArticleCollectionRuns(finishedRunIds));
+        queryClient.invalidateQueries({ queryKey: ["articles"] });
+        queryClient.invalidateQueries({ queryKey: ["wechat-accounts"] });
+      }
+    }, 3000);
+
+    return () => window.clearInterval(timer);
+  }, [activeCollectionRuns, message, queryClient]);
+
   const confirmClean = (type: "orphan" | "duplicate" | "expired", title: string) => {
     modal.confirm({
       title,
@@ -185,6 +238,7 @@ export default function ArticlesPage() {
   const renderExtractionStatus = (value?: string) => {
     const colorMap: Record<string, string> = {
       pending: "default",
+      queued: "processing",
       processing: "processing",
       extracted: "success",
       not_activity: "default",
@@ -283,6 +337,7 @@ export default function ArticlesPage() {
             <Button icon={<ReloadOutlined />} onClick={() => query.refetch()}>
               刷新
             </Button>
+            {activeCollectionRuns.length > 0 && <Tag color="processing">采集中 {activeCollectionRuns.length}</Tag>}
             <Link to="/wechat-accounts/add">
               <Button type="primary" icon={<PlusOutlined />}>
                 添加公众号

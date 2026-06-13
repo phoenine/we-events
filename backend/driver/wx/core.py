@@ -2,7 +2,7 @@ import os
 import time
 import traceback
 from typing import Any, Callable, Optional, TypedDict
-from threading import Lock
+from threading import Lock, Thread
 
 from driver.browser.playwright import PlaywrightController
 from driver.wx.state import LoginState
@@ -192,9 +192,8 @@ class Wx:
 
         self.Clean()
         logger.info("子线程执行中")
-        from core.common.thread import ThreadManager
 
-        self.thread = ThreadManager(
+        self.thread = Thread(
             target=self.wxLogin, args=(CallBack, True, True, True)
         )  # args: (CallBack, NeedExit, prelocked, mutex_acquired)
         try:
