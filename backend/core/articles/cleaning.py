@@ -1,4 +1,5 @@
 from core.articles import article_repo
+from core.articles.storage_cleanup import delete_article_storage_objects_sync
 from core.common.log import logger
 
 
@@ -27,11 +28,17 @@ def clean_duplicate_articles():
                 seen_articles.add(article_key)
 
         # 删除重复文章
+        storage_deleted_count = 0
         for duplicate in duplicates:
             logger.info(f"删除重复文章: {duplicate['title']}")
+            storage_deleted_count += delete_article_storage_objects_sync(duplicate)
             article_repo.sync_delete_article(duplicate["id"])
+            article_repo.sync_delete_article_images_by_article(duplicate["id"])
 
-        return (f"已清理 {len(duplicates)} 篇重复文章", len(duplicates))
+        return (
+            f"已清理 {len(duplicates)} 篇重复文章，删除图片对象 {storage_deleted_count} 个",
+            len(duplicates),
+        )
     except Exception as e:
         return (f"清理重复文章失败: {str(e)}", 0)
 

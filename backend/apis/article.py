@@ -2,72 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, status as fast_status, Qu
 from core.integrations.supabase.auth import get_current_user
 from core.articles import article_repo
 from core.wechat_accounts import wechat_account_repo
-from core.integrations.supabase.storage import supabase_storage_articles
+from core.articles.storage_cleanup import delete_article_storage_objects
 from core.common.log import logger
 from schemas import success_response, error_response, format_search_kw
 from typing import Optional, List, Dict, Any, cast
-import re
 from datetime import datetime, timedelta, timezone
 
 router = APIRouter(prefix="/articles", tags=["文章管理"])
-
-
-def _extract_storage_paths_from_content(content: str) -> List[str]:
-    """从文章 HTML 中提取 article-images 桶对象路径。"""
-    html = str(content or "")
-    if not html:
-        return []
-    bucket = supabase_storage_articles.bucket
-    public_prefix = f"/storage/v1/object/public/{bucket}/"
-    sign_prefix = f"/storage/v1/object/sign/{bucket}/"
-    paths: set[str] = set()
-
-    for src in re.findall(r"""(?:src|data-src)\s*=\s*["']([^"']+)["']""", html):
-        value = (src or "").strip()
-        if not value:
-            continue
-        if public_prefix in value:
-            paths.add(value.split(public_prefix, 1)[1].split("?", 1)[0])
-            continue
-        if sign_prefix in value:
-            paths.add(value.split(sign_prefix, 1)[1].split("?", 1)[0])
-            continue
-        # 兼容直接存对象路径的情况
-        if value.startswith("articles/"):
-            paths.add(value)
-    return [p for p in paths if p]
-
-
-async def _delete_article_storage_objects(article: Dict[str, Any]) -> int:
-    article_id = str(article.get("id") or "")
-    paths: set[str] = set()
-
-    # 优先使用映射表，避免依赖 HTML 解析。
-    if article_id:
-        try:
-            mapped_rows_raw = await article_repo.get_article_images(article_id)
-            mapped_rows: List[Dict[str, Any]] = cast(List[Dict[str, Any]], mapped_rows_raw)
-            for row in mapped_rows:
-                path = str(row.get("object_path") or "").strip()
-                if path:
-                    paths.add(path)
-        except Exception:
-            pass
-
-    # 兼容历史数据：映射不存在时从正文提取。
-    if not paths:
-        content = str(article.get("content") or "")
-        for p in _extract_storage_paths_from_content(content):
-            paths.add(p)
-
-    if not paths:
-        return 0
-    deleted = 0
-    for path in paths:
-        ok = await supabase_storage_articles.delete_object(path)
-        if ok:
-            deleted += 1
-    return deleted
 
 
 async def _safe_delete_article_image_mapping(article_id: str) -> None:
@@ -276,7 +217,7 @@ async def clean_expired_articles(_current_user: dict = Depends(get_current_user)
 
         storage_deleted_count = 0
         for article in expired_rows:
-            storage_deleted_count += await _delete_article_storage_objects(article)
+            storage_deleted_count += await delete_article_storage_objects(article)
 
         deleted_count = await article_repo.clean_expired_articles(days=15)
         await _safe_delete_article_image_mappings(article_ids)
@@ -295,10 +236,10 @@ async def clean_expired_articles(_current_user: dict = Depends(get_current_user)
         )
 
 
-@router.delete("/clean", summary="清理无效文章(MP_ID不存在于wechat_accounts表中的文章)")
+@router.delete("/clean", summary="清理孤儿文章(MP_ID不存在于wechat_accounts表中的文章)")
 async def clean_orphan_articles(_current_user: dict = Depends(get_current_user)):
     try:
-        # 获取所有有效的公众号账号 ID
+        # 获取所有有效的公众号账号 ID；这里的“孤儿文章”不是空正文/不可访问文章。
         accounts_raw = await wechat_account_repo.get_wechat_accounts()
         accounts: List[Dict[str, Any]] = cast(List[Dict[str, Any]], accounts_raw)
         valid_account_ids = {account["id"] for account in accounts}
@@ -311,23 +252,23 @@ async def clean_orphan_articles(_current_user: dict = Depends(get_current_user))
         storage_deleted_count = 0
         for article in articles:
             if article["wechat_account_id"] not in valid_account_ids:
-                storage_deleted_count += await _delete_article_storage_objects(article)
+                storage_deleted_count += await delete_article_storage_objects(article)
                 await article_repo.delete_article(article["id"])
                 await _safe_delete_article_image_mapping(str(article["id"]))
                 deleted_count += 1
 
         return success_response(
             {
-                "message": "清理无效文章成功",
+                "message": "清理孤儿文章成功",
                 "deleted_count": deleted_count,
                 "storage_deleted_count": storage_deleted_count,
             }
         )
     except Exception as e:
-        logger.error(f"清理无效文章错误: {str(e)}")
+        logger.error(f"清理孤儿文章错误: {str(e)}")
         raise HTTPException(
             status_code=fast_status.HTTP_201_CREATED,
-            detail=error_response(code=50001, message="清理无效文章失败"),
+            detail=error_response(code=50001, message="清理孤儿文章失败"),
         )
 
 
@@ -374,7 +315,7 @@ async def delete_articles_batch(
                 missing_ids.append(article_id)
                 continue
             try:
-                storage_deleted_count += await _delete_article_storage_objects(article)
+                storage_deleted_count += await delete_article_storage_objects(article)
                 await article_repo.delete_article(article_id)
                 await _safe_delete_article_image_mapping(article_id)
                 deleted_count += 1
@@ -415,7 +356,7 @@ async def delete_article(
         article = article_rows[0]
 
         # 删除关联的 storage 图片对象（best-effort）
-        storage_deleted = await _delete_article_storage_objects(article)
+        storage_deleted = await delete_article_storage_objects(article)
 
         # 删除文章
         await article_repo.delete_article(article_id)
