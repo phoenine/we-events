@@ -1,20 +1,31 @@
 import os
 import platform
 import json
-import random
-import uuid
 import threading
+from pathlib import Path
 from playwright.sync_api import sync_playwright
 from core.common.log import logger
 
 
-browsers_name = os.getenv("BROWSER_TYPE", "firefox")
 browsers_path = os.getenv("PLAYWRIGHT_BROWSERS_PATH", "")
 if browsers_path:
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path
 
 
 LAUNCH_MUTEX = threading.Lock()
+ANTI_CRAWLER_SCRIPT_DIR = Path(__file__).with_name("anti_crawler")
+ANTI_CRAWLER_SCRIPT_NAMES = (
+    "anti_crawler_base.js",
+    "anti_crawler_advanced.js",
+    "anti_crawler_behavior.js",
+)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 class PlaywrightController:
@@ -51,7 +62,6 @@ class PlaywrightController:
         headless=True,
         mobile_mode=False,
         dis_image=False,
-        browser_name=browsers_name,
         language="zh-CN",
         anti_crawler=True,
     ):
@@ -74,7 +84,7 @@ class PlaywrightController:
                     ):
                         self._unsafe_cleanup_locked()
 
-                    if bool(os.getenv("NOT_HEADLESS", False)):
+                    if _env_bool("NOT_HEADLESS"):
                         headless = False
                     if self.driver is None:
                         self.driver = sync_playwright().start()
@@ -83,17 +93,36 @@ class PlaywrightController:
                     # 轻量重试 1 次（总计 2 次），首次失败会完整清理并重建 driver
                     for i in range(2):
                         try:
-                            browser_type = self.driver.firefox  # 统一使用 Firefox
-                            self.browser = browser_type.launch(
-                                headless=headless,
-                                args=[
-                                    "--no-sandbox",
-                                    "--disable-dev-shm-usage",
-                                    "--disable-gpu",
-                                ],
+                            browser_type = self.driver.chromium
+                            launch_args = [
+                                "--disable-blink-features=AutomationControlled",
+                                "--disable-dev-shm-usage",
+                                "--disable-gpu",
+                                "--no-sandbox",
+                            ]
+                            logger.info(
+                                f"启动 Playwright 浏览器: type=chrome/chromium headless={headless} anti_crawler={anti_crawler}"
                             )
+                            launch_options = {
+                                "headless": headless,
+                                "args": launch_args,
+                            }
+                            try:
+                                self.browser = browser_type.launch(
+                                    channel="chrome",
+                                    **launch_options,
+                                )
+                                logger.info("Playwright 使用系统 Chrome 启动")
+                            except Exception as e:
+                                logger.warning(
+                                    f"系统 Chrome 启动失败，回退到 bundled Chromium: {e}"
+                                )
+                                self.browser = browser_type.launch(**launch_options)
                             # 启动成功后创建上下文与页面（保持在同一把实例锁内，防止并发 cleanup）
-                            context_options = {"locale": language}
+                            context_options = {
+                                "locale": language,
+                                "timezone_id": "Asia/Shanghai",
+                            }
                             if anti_crawler:
                                 context_options.update(
                                     self._get_anti_crawler_config(mobile_mode)
@@ -174,26 +203,17 @@ class PlaywrightController:
 
     def _get_anti_crawler_config(self, mobile_mode=False):
         """获取反爬虫相关配置"""
-        # 生成随机指纹
-        fingerprint = self._generate_uuid()
-
         config = {
             "user_agent": self._get_realistic_user_agent(mobile_mode),
             "viewport": {
-                "width": random.randint(1200, 1920) if not mobile_mode else 375,
-                "height": random.randint(800, 1080) if not mobile_mode else 812,
-                "device_scale_factor": random.choice([1, 1.25, 1.5, 2]),
+                "width": 1440 if not mobile_mode else 375,
+                "height": 960 if not mobile_mode else 812,
+                "device_scale_factor": 1,
             },
+            "java_script_enabled": True,
+            "ignore_https_errors": True,
             "extra_http_headers": {
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
                 "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Cache-Control": "no-cache",
-                "Upgrade-Insecure-Requests": "1",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Sec-Fetch-User": "?1",
             },
         }
 
@@ -211,31 +231,11 @@ class PlaywrightController:
         """获取更真实的User-Agent字符串"""
         logger.info(f"浏览器特征设置完成: {'移动端' if mobile_mode else '桌面端'}")
         if mobile_mode:
-            mobile_agents = [
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
-                "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36",
-                "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36",
-                "Mozilla/5.0 (Windows Phone 10.0; Android 6.0.1; Microsoft; Lumia 950) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Mobile Safari/537.36 Edge/14.14393",
-            ]
-            return random.choice(mobile_agents)
-        else:
-            desktop_agents = [
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/120.0",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 OPR/106.0.0.0",
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            ]
-            return random.choice(desktop_agents)
-
-    def _generate_uuid(self):
-        """生成UUID指纹"""
-        return str(uuid.uuid4()).replace("-", "")
+            return "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+        return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
     def _apply_anti_crawler_scripts(self):
-        """应用反爬虫脚本，尽量隐藏自动化特征"""
+        """应用反爬虫脚本，尽量隐藏自动化特征。"""
         # 可选依赖：未安装时不自动 pip 安装，避免运行期修改环境导致不可控
         try:
             from playwright_stealth.stealth import Stealth
@@ -246,62 +246,26 @@ class PlaywrightController:
             # 降级：仅使用下面的 init_script/evaluate 方案
             pass
 
-        # 隐藏自动化特征
-        self.page.add_init_script(
-            """
-        // 隐藏webdriver属性
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => false,
-        });
+        for script_name in ANTI_CRAWLER_SCRIPT_NAMES:
+            script_path = ANTI_CRAWLER_SCRIPT_DIR / script_name
+            try:
+                script = script_path.read_text(encoding="utf-8")
+                self.page.add_init_script(self._wrap_anti_crawler_script(script, script_name))
+                logger.info(f"[anti-crawler] injected {script_name}")
+            except Exception as e:
+                logger.warning(f"[anti-crawler] inject {script_name} failed: {e}")
 
-        // 隐藏chrome属性
-        Object.defineProperty(window, 'chrome', {
-            get: () => false,
-        });
-
-        // 修改plugins长度
-        Object.defineProperty(navigator, 'plugins', {
-            get: () => [1, 2, 3, 4, 5],
-        });
-
-        // 修改languages
-        Object.defineProperty(navigator, 'languages', {
-            get: () => ['zh-CN', 'zh', 'en'],
-        });
-
-        // 修改permissions
-        const originalQuery = window.navigator.permissions.query;
-        window.navigator.permissions.query = (parameters) => (
-            parameters.name === 'notifications' ?
-                Promise.resolve({ state: Notification.permission }) :
-                originalQuery(parameters)
-        );
-        """
-        )
-
-        # 设置更真实的浏览器行为
-        self.page.evaluate(
-            """
-        // 随机延迟点击事件
-        const originalAddEventListener = EventTarget.prototype.addEventListener;
-        EventTarget.prototype.addEventListener = function(type, listener, options) {
-            if (type === 'click') {
-                const wrappedListener = function(...args) {
-                    setTimeout(() => listener.apply(this, args), Math.random() * 100 + 50);
-                };
-                return originalAddEventListener.call(this, type, wrappedListener, options);
-            }
-            return originalAddEventListener.call(this, type, listener, options);
-        };
-
-        // 随机化鼠标移动
-        document.addEventListener('mousemove', (e) => {
-            if (Math.random() > 0.7) {
-                e.stopImmediatePropagation();
-            }
-        }, true);
-        """
-        )
+    def _wrap_anti_crawler_script(self, script: str, script_name: str) -> str:
+        """隔离第三方反检测脚本的顶层作用域，避免多个脚本互相污染。"""
+        return f"""
+(() => {{
+    try {{
+{script}
+    }} catch (error) {{
+        console.warn("[anti-crawler] {script_name} failed", error);
+    }}
+}})();
+"""
 
     def __del__(self):
         """对象析构时尽量清理资源"""

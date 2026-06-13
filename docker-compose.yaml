@@ -18,7 +18,6 @@ services:
       PORT: 38001
       DEBUG: ${DEBUG:-false}
       LLM_TIMEOUT_SECONDS: 120
-      BROWSER_TYPE: firefox
     ports:
       - "38001:38001"
     volumes:

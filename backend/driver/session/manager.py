@@ -165,6 +165,7 @@ class SessionManager:
             cookies = None
 
         token: Optional[str] = None
+        user_agent: Optional[str] = None
         try:
             page = getattr(controller, "page", None)
             page_url = getattr(page, "url", "") or ""
@@ -175,4 +176,14 @@ class SessionManager:
             token = None
 
         session = self.format_session(cookies, token=token)
+        try:
+            page = getattr(controller, "page", None)
+            if page is not None:
+                ua = page.evaluate("() => navigator.userAgent")
+                if ua:
+                    user_agent = str(ua)
+        except Exception:
+            user_agent = None
+        if user_agent:
+            session["user_agent"] = user_agent
         return session, cookies, token

@@ -8,6 +8,7 @@ class WxMpSession(TypedDict, total=False):
     cookies_str: str
     token: str
     wx_login_url: str
+    user_agent: str
     expiry: Optional[dict]
     ext_data: Any
     updated_at: int
