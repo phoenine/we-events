@@ -53,7 +53,13 @@ playwright install chromium
 
 ### 4.3 配置
 
-本地后端运行推荐配置 `backend/.env`（或系统环境变量）：
+直接运行后端/debug 时复制模板：
+
+```bash
+cp .env.example .env
+```
+
+必需配置项如下：
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
@@ -62,7 +68,7 @@ playwright install chromium
 - `AUTO_RELOAD` / `THREADS`
 - `USERNAME` / `PASSWORD`（初始化管理员账号）
 
-数据库 schema 与 Supabase Storage 初始化以根目录 `supabase/README.md` 为准。
+本地 self-hosted Supabase 默认 URL 为 `http://host.docker.internal:8000`。Supabase online 使用 `https://<project-ref>.supabase.co`。数据库 schema 与 Supabase Storage 初始化以根目录 `supabase/README.md` 为准。
 
 ## 5. 启动方式
 
@@ -84,6 +90,13 @@ python main.py
 
 ```bash
 python main.py -init True
+```
+
+Docker Compose 通过根目录 env 文件选择 Supabase 环境：
+
+```bash
+docker compose --env-file .env.local up --build
+docker compose --env-file .env.online up --build
 ```
 
 ### 5.2 Docker 启动

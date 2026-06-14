@@ -14,6 +14,10 @@ venv/
 env/
 
 .env
+.env.local
+.env.online
+supabase/.env
+backend/.env
 
 build/
 dist/
@@ -31,6 +35,9 @@ docs/
 *.sqlite
 *.db
 data/
+supabase/volumes/db/data/
+supabase/volumes/storage/
+supabase/migrations/patch/
 node_modules/
 .vite/
 coverage/
