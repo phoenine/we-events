@@ -3,21 +3,31 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    env_file:
-      - ./backend/.env
     environment:
-      SUPABASE_URL: https://ljzbrkbgfifkporwgesc.supabase.co
       TZ: Asia/Shanghai
       APP_NAME: we-events
       SERVER_NAME: we-events
       WEB_NAME: we-events
       SECRET_KEY: ${SECRET_KEY_BASE:-UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq}
-      USERNAME: ${USERNAME:-admin@phoenine.top}
-      PASSWORD: ${PASSWORD:-WxHelper@2025!}
       THREADS: ${THREADS:-1}
       PORT: 38001
+      USERNAME: ${USERNAME:-admin@example.com}
+      PASSWORD: ${PASSWORD:-admin@123}
       DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CACHE_DIR: ${CACHE_DIR:-./data/cache}
+      LLM_API_BASE: ${LLM_API_BASE:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_TIMEOUT_SECONDS: 120
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      SUPABASE_QR_BUCKET: ${SUPABASE_QR_BUCKET:-qr}
+      SUPABASE_ARTICLES_BUCKET: ${SUPABASE_ARTICLES_BUCKET:-article-images}
+      SUPABASE_QR_PATH: ${SUPABASE_QR_PATH:-wx/{uuid}.png}
+      SUPABASE_ARTICLE_IMAGE_PATH: ${SUPABASE_ARTICLE_IMAGE_PATH:-articles/{article_id}/{filename}}
+      SUPABASE_QR_SIGN_EXPIRES: ${SUPABASE_QR_SIGN_EXPIRES:-120}
     ports:
       - "38001:38001"
     volumes:
@@ -55,4 +65,4 @@ services:
 networks:
   default:
     # external: true
-    name: ws-supabase_default
+    name: we-events-network

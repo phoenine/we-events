@@ -4,15 +4,67 @@ This directory defines the clean Supabase baseline for fresh environments.
 
 The project uses Supabase as the backend data layer. The frontend does not query Supabase tables directly; all product data access goes through FastAPI.
 
+## Self-Hosted Docker
+
+The self-hosted Supabase compose stack is kept in this directory so its env file, Docker volumes, and helper files do not pollute the application root.
+
+Expected local layout:
+
+```text
+supabase/
+├── .env                    # local Supabase compose environment, ignored by git
+├── docker-compose.yml      # self-hosted Supabase stack
+├── volumes/                # Kong, Postgres init, Storage files, and Studio snippets
+├── migrations/
+└── config_managements_seed.sql
+```
+
+This project does not use Supabase Edge Functions, Realtime, Supavisor/Pooler, Imgproxy, Analytics/Vector logging, or S3/MinIO-backed storage. Storage runs in local file mode for the `qr` and `article-images` buckets used by the backend.
+
+The local prerequisite stack intentionally keeps only:
+
+- Kong
+- Auth
+- PostgREST
+- Storage
+- Postgres
+- Studio
+- Postgres Meta
+
+Start Supabase from this directory:
+
+```bash
+cd supabase
+docker compose up -d
+```
+
+The application compose file remains at the project root as `docker-compose.yaml` and should be started separately.
+
 ## Execution Order
 
-Apply SQL in this order:
+For a fresh Supabase environment, apply SQL in this order:
 
 1. `supabase/migrations/20241120_initial_schema.sql`
 2. `supabase/migrations/20241120_rls_policies.sql`
 3. `supabase/config_managements_seed.sql`
 
-This is a clean baseline. Existing database data does not need migration for the current project plan.
+For an existing online or local self-hosted environment created before the queue model, apply patch SQL after the baseline state as needed:
+
+1. `supabase/migrations/patch/20260612134005_activity_extraction_queue.sql`
+2. `supabase/migrations/patch/20260612141000_article_collection_queue.sql`
+3. `supabase/migrations/patch/20260612143000_fix_article_collection_queue_grants.sql`
+
+Fresh environments should prefer the clean baseline. Existing environments should apply patches in timestamp order.
+
+## Environment Modes
+
+The application supports both Supabase online and self-hosted local Supabase.
+
+- Local self-hosted Docker Compose: use root `.env.local` with `SUPABASE_URL=http://host.docker.internal:8000` for backend containers.
+- Online Docker Compose: use root `.env.online` with `SUPABASE_URL=https://<project-ref>.supabase.co`.
+- Direct backend debug: use `backend/.env` and set the same Supabase URL/key values there.
+
+Both environments must use the same schema, RLS policies, runtime seed, and required Storage buckets. Auth users and profile rows are environment-specific and are not shared between local and online.
 
 ## Required Storage Buckets
 
@@ -26,6 +78,11 @@ Create these Supabase Storage buckets:
   - Purpose: images downloaded from collected article HTML.
   - Access: public by current content rendering strategy.
   - Database mappings live in `article_images`.
+
+Bucket names are configured through:
+
+- `SUPABASE_QR_BUCKET=qr`
+- `SUPABASE_ARTICLES_BUCKET=article-images`
 
 ## Architecture Decisions
 

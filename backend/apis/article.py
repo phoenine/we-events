@@ -3,6 +3,7 @@ from core.integrations.supabase.auth import get_current_user
 from core.articles import article_repo
 from core.wechat_accounts import wechat_account_repo
 from core.articles.storage_cleanup import delete_article_storage_objects
+from core.articles.quality_service import reclassify_article_content_statuses
 from core.common.log import logger
 from schemas import success_response, error_response, format_search_kw
 from typing import Optional, List, Dict, Any, cast
@@ -284,6 +285,27 @@ async def clean_duplicate(_current_user: dict = Depends(get_current_user)):
         raise HTTPException(
             status_code=fast_status.HTTP_201_CREATED,
             detail=error_response(code=50001, message="清理重复文章"),
+        )
+
+
+@router.post("/reclassify_content_status", summary="重分类文章正文抓取状态")
+async def reclassify_content_status(
+    limit: Optional[int] = Query(None, ge=1, le=5000),
+    dry_run: bool = Query(False),
+    _current_user: dict = Depends(get_current_user),
+):
+    try:
+        summary = await reclassify_article_content_statuses(
+            article_repo,
+            limit=limit,
+            dry_run=dry_run,
+        )
+        return success_response(summary)
+    except Exception as e:
+        logger.error(f"重分类文章正文抓取状态失败: {str(e)}")
+        raise HTTPException(
+            status_code=fast_status.HTTP_406_NOT_ACCEPTABLE,
+            detail=error_response(code=50001, message="重分类文章正文抓取状态失败"),
         )
 
 
