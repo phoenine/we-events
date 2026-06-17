@@ -9,6 +9,12 @@ from typing import Optional
 import requests
 from bs4 import BeautifulSoup
 
+from core.articles.collection_policy import (
+    ExistingArticleAction,
+    classify_article_collection_decision,
+    cutoff_timestamp,
+    is_older_than_cutoff,
+)
 from core.common.log import logger
 from core.integrations.wx.base import WxGather
 
@@ -77,6 +83,8 @@ class WechatAccountAppMsg(WxGather):
         Gather_Content: bool = False,
         Item_Over_CallBack=None,
         Over_CallBack=None,
+        MaxArticleAgeDays: int = 7,
+        RepairFailedExisting: bool = True,
     ):
         """分页拉取公众号发布列表（/cgi-bin/appmsgpublish），可选抓取正文。"""
 
@@ -94,6 +102,7 @@ class WechatAccountAppMsg(WxGather):
 
         count = 5
         i = int(start_page or 0)
+        cutoff_ts = cutoff_timestamp(MaxArticleAgeDays)
 
         # token 仅对需要 token 的接口按需推导
         token = self.require_mp_token()
@@ -107,7 +116,9 @@ class WechatAccountAppMsg(WxGather):
             begin = i * count
             page_candidates = 0
             page_skip_existing = 0
+            page_skip_old = 0
             page_processed = 0
+            page_recent_candidates = 0
 
             params = {
                 "sub": "list",
@@ -178,7 +189,7 @@ class WechatAccountAppMsg(WxGather):
                         continue
 
                     appmsgex = (publish_info or {}).get("appmsgex") or []
-                    existing_ids = super().query_existing_article_ids(
+                    existing_articles = super().query_existing_articles(
                         [str((it or {}).get("aid") or "") for it in appmsgex]
                     )
                     for item in appmsgex:
@@ -187,8 +198,20 @@ class WechatAccountAppMsg(WxGather):
                             if not aid:
                                 continue
                             page_candidates += 1
-                            if aid in existing_ids:
-                                page_skip_existing += 1
+                            is_old = is_older_than_cutoff(item, cutoff_ts)
+                            if not is_old:
+                                page_recent_candidates += 1
+                            action = classify_article_collection_decision(
+                                item,
+                                existing_article=existing_articles.get(aid),
+                                cutoff_ts=cutoff_ts,
+                                repair_failed_existing=RepairFailedExisting,
+                            )
+                            if action == ExistingArticleAction.SKIP:
+                                if is_old:
+                                    page_skip_old += 1
+                                else:
+                                    page_skip_existing += 1
                                 continue
                             if Gather_Content and aid and (not super().HasGathered(aid)):
                                 link = item.get("link") or ""
@@ -214,9 +237,16 @@ class WechatAccountAppMsg(WxGather):
 
                 logger.info(
                     f"[dedup-debug] mode=app wechat_account_id={wechat_account_id} page={i} "
-                    f"candidates={page_candidates} skip_existing={page_skip_existing} "
+                    f"candidates={page_candidates} recent={page_recent_candidates} "
+                    f"skip_old={page_skip_old} skip_existing={page_skip_existing} "
                     f"processed={page_processed} gather_content={Gather_Content}"
                 )
+                if page_candidates > 0 and page_recent_candidates == 0:
+                    logger.info(
+                        f"[collection-policy] stop old page mode=app "
+                        f"wechat_account_id={wechat_account_id} page={i}"
+                    )
+                    break
                 i += 1
 
             except requests.exceptions.Timeout:

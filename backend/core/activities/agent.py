@@ -12,19 +12,6 @@ from core.common.log import logger
 
 PROMPT_VERSION = "activity_extraction.v1"
 
-ACTIVITY_KEYWORDS = (
-    "活动",
-    "讲座",
-    "分享会",
-    "沙龙",
-    "培训",
-    "展览",
-    "工作坊",
-    "招募",
-    "报名",
-    "预约",
-)
-
 MAX_MARKDOWN_CHARS = int(os.getenv("LLM_INPUT_MARKDOWN_CHARS", "60000"))
 MAX_TEXT_CHARS = int(os.getenv("LLM_INPUT_TEXT_CHARS", "20000"))
 MAX_IMAGE_COUNT = int(os.getenv("LLM_INPUT_IMAGE_COUNT", "24"))
@@ -81,18 +68,6 @@ def _compact_input_snapshot(input_snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _content_text(input_snapshot: dict[str, Any]) -> str:
-    article = input_snapshot.get("article") or {}
-    content = input_snapshot.get("content") or {}
-    return "\n".join(
-        [
-            f"标题：{article.get('title') or ''}",
-            f"摘要：{article.get('description') or ''}",
-            str(content.get("markdown") or content.get("text") or ""),
-        ]
-    ).strip()
-
-
 def _build_prompt(input_snapshot: dict[str, Any]) -> str:
     compact_snapshot = _compact_input_snapshot(input_snapshot)
     return (
@@ -134,52 +109,13 @@ def _build_prompt(input_snapshot: dict[str, Any]) -> str:
     )
 
 
-def _heuristic_output(input_snapshot: dict[str, Any]) -> ActivityExtractionOutput:
-    text = _content_text(input_snapshot)
-    if not any(keyword in text for keyword in ACTIVITY_KEYWORDS):
-        return ActivityExtractionOutput(
-            is_activity_article=False,
-            confidence=0,
-            reason="未命中活动关键词",
-            activities=[],
-        )
-
-    article = input_snapshot.get("article") or {}
-    return ActivityExtractionOutput.model_validate(
-        {
-            "is_activity_article": True,
-            "confidence": 0.3,
-            "reason": "未配置 LLM_API_KEY，使用关键词兜底判断",
-            "activities": [
-                {
-                    "title": article.get("title") or "未命名活动",
-                    "summary": article.get("description") or "",
-                    "event_time_text": "",
-                    "start_at": None,
-                    "end_at": None,
-                    "location_text": "",
-                    "registration_text": "",
-                    "registration_method": "unknown",
-                    "registration_url": article.get("url") or "",
-                    "qr_image_urls": [],
-                    "fee_text": "",
-                    "audience": "",
-                    "evidence": [],
-                    "warnings": ["未配置 LLM_API_KEY，结果需要人工复核"],
-                }
-            ],
-        }
-    )
-
-
 def extract_activities_with_llm(input_snapshot: dict[str, Any]) -> tuple[ActivityExtractionOutput, str, str]:
     api_base = os.getenv("LLM_API_BASE", "https://api.siliconflow.cn/v1/chat/completions")
     api_key = os.getenv("LLM_API_KEY", "")
     model = os.getenv("LLM_MODEL", "Qwen/Qwen3-32B")
 
     if not api_key:
-        logger.warning("[activities.extract] LLM_API_KEY missing, using heuristic fallback")
-        return _heuristic_output(input_snapshot), "", model
+        raise RuntimeError("未配置 LLM_API_KEY，无法进行活动抽取")
 
     prompt = _build_prompt(input_snapshot)
     payload = {

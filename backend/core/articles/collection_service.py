@@ -134,6 +134,25 @@ async def _mark_item_stale_failed(item: dict[str, Any]) -> None:
         await _refresh_run_summary(run_id)
 
 
+def _failed_item_update(item: dict[str, Any], error: str) -> dict[str, Any]:
+    attempt_count = int(item.get("attempt_count") or 0)
+    max_attempts = max(1, int(item.get("max_attempts") or 1))
+    if attempt_count < max_attempts:
+        return {
+            "status": "queued",
+            "error": error,
+            "locked_at": None,
+            "locked_by": None,
+        }
+    return {
+        "status": "failed",
+        "error": error,
+        "finished_at": _now(),
+        "locked_at": None,
+        "locked_by": None,
+    }
+
+
 async def _refresh_run_summary(run_id: str) -> dict[str, Any]:
     items = await article_collection_repo.get_items_by_run(run_id)
     total = len(items)
@@ -254,6 +273,7 @@ async def enqueue_account_collection(
     if not run_id:
         raise RuntimeError("创建文章采集任务失败")
 
+    max_attempts = max(1, await runtime_settings.get_int("collection.max_attempts", 2))
     try:
         item = await article_collection_repo.create_item(
             {
@@ -262,6 +282,7 @@ async def enqueue_account_collection(
                 "account_snapshot": account,
                 "start_page": start_page,
                 "max_page": max_page,
+                "max_attempts": max_attempts,
             }
         )
     except Exception:
@@ -365,6 +386,7 @@ async def enqueue_group_collection(
         raise RuntimeError("创建分组采集任务失败")
 
     created: list[dict[str, Any]] = []
+    max_attempts = max(1, await runtime_settings.get_int("collection.max_attempts", 2))
     for account in runnable:
         account_id = str(account.get("id") or "")
         try:
@@ -376,6 +398,7 @@ async def enqueue_group_collection(
                         "account_snapshot": account,
                         "start_page": start_page,
                         "max_page": max_page,
+                        "max_attempts": max_attempts,
                     }
                 )
             )
@@ -493,13 +516,7 @@ async def _article_collection_worker_loop(worker_id: str, stop_event: asyncio.Ev
                 )
                 await article_collection_repo.update_item(
                     str(item.get("id") or ""),
-                    {
-                        "status": "failed",
-                        "error": str(exc),
-                        "finished_at": _now(),
-                        "locked_at": None,
-                        "locked_by": None,
-                    },
+                    _failed_item_update(item, str(exc)),
                 )
                 await _refresh_run_summary(str(item.get("run_id") or ""))
         except asyncio.CancelledError:
