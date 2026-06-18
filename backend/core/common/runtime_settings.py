@@ -33,6 +33,7 @@ class RuntimeSettings:
             "collection.repair_failed_existing": os.getenv("COLLECTION_REPAIR_FAILED_EXISTING", default),
             "collection.max_attempts": os.getenv("COLLECTION_MAX_ATTEMPTS", default),
             "image.retry_count": os.getenv("IMAGE_RETRY_COUNT", default),
+            "ocr.enabled": os.getenv("OCR_ENABLED", default),
         }
         return fallback_map.get(key, default)
 

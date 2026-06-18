@@ -186,6 +186,14 @@ class ArticleRepository:
             order="position.asc,created_at.asc",
         )
 
+    async def update_article_image(self, image_id: str, data: Dict[str, Any]):
+        """更新单张文章图片的 OCR 缓存等字段。"""
+        return await self.client.update(
+            self.ARTICLE_IMAGE_TABLE,
+            data,
+            filters={"id": image_id},
+        )
+
     async def delete_article_images_by_article(self, article_id: str):
         """删除文章关联图片映射。"""
         return await self.client.delete(
@@ -201,25 +209,59 @@ class ArticleRepository:
         )
 
     async def replace_article_images(self, article_id: str, images: List[Dict[str, Any]]):
-        """按文章替换图片映射（先删后插，确保与最新正文一致）。"""
-        await self.delete_article_images_by_article(article_id)
+        """按文章同步图片映射，并保留未变化图片的 OCR 缓存。"""
+        existing = await self.get_article_images(article_id)
+        existing_by_path = {
+            str(item.get("object_path") or ""): item
+            for item in existing
+            if str(item.get("object_path") or "")
+        }
         rows: List[Dict[str, Any]] = []
         for idx, img in enumerate(images, start=1):
             object_path = str(img.get("object_path") or "").strip()
             if not object_path:
                 continue
-            rows.append(
-                {
-                    "article_id": article_id,
-                    "bucket": img.get("bucket") or "article-images",
-                    "object_path": object_path,
-                    "public_url": img.get("public_url") or "",
-                    "origin_url": img.get("origin_url") or "",
-                    "position": img.get("position") or idx,
-                }
-            )
+            row = {
+                "article_id": article_id,
+                "bucket": img.get("bucket") or "article-images",
+                "object_path": object_path,
+                "public_url": img.get("public_url") or "",
+                "origin_url": img.get("origin_url") or "",
+                "position": img.get("position") or idx,
+            }
+            current = existing_by_path.get(object_path)
+            if current and any(
+                str(current.get(key) or "") != str(row.get(key) or "")
+                for key in ("bucket", "public_url", "origin_url")
+            ):
+                row.update(
+                    {
+                        "ocr_status": "pending",
+                        "ocr_text": "",
+                        "ocr_confidence": None,
+                        "ocr_provider": "",
+                        "ocr_error": "",
+                        "ocr_finished_at": None,
+                    }
+                )
+            rows.append(row)
         if not rows:
+            if existing:
+                await self.delete_article_images_by_article(article_id)
             return []
+
+        object_paths = {row["object_path"] for row in rows}
+        stale_ids = [
+            str(item.get("id") or "")
+            for item in existing
+            if str(item.get("object_path") or "") not in object_paths
+            and str(item.get("id") or "")
+        ]
+        if stale_ids:
+            await self.client.delete(
+                self.ARTICLE_IMAGE_TABLE,
+                {"id": {"in": stale_ids}},
+            )
         return await self.client.upsert(
             self.ARTICLE_IMAGE_TABLE,
             rows,

@@ -379,7 +379,7 @@ export default function ArticlesPage() {
           <Button
             icon={<ClearOutlined />}
             loading={cleanAction.isPending}
-            onClick={() => confirmClean("expired", "清理 15 天前文章？")}
+            onClick={() => confirmClean("expired", "清理 7 天前文章？")}
           >
             清理过期
           </Button>

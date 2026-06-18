@@ -41,6 +41,7 @@ interface ConfigValues {
   llm_use_for_fallback?: boolean;
   llm_use_for_image?: boolean;
   llm_retry_count?: number;
+  ocr_enabled?: boolean;
 }
 
 const CONFIG_FIELDS: ConfigField[] = [
@@ -63,6 +64,7 @@ const CONFIG_FIELDS: ConfigField[] = [
   { key: "llm.use_for_fallback", type: "boolean", description: "用于正文采集兜底" },
   { key: "llm.use_for_image", type: "boolean", description: "用于图片信息理解" },
   { key: "llm.retry_count", type: "number", description: "失败重试次数" },
+  { key: "ocr.enabled", type: "boolean", description: "启用活动图片 OCR 补充" },
 ];
 
 const DEFAULT_VALUES: Required<ConfigValues> = {
@@ -81,6 +83,7 @@ const DEFAULT_VALUES: Required<ConfigValues> = {
   llm_use_for_fallback: true,
   llm_use_for_image: true,
   llm_retry_count: 1,
+  ocr_enabled: false,
 };
 
 function formName(configKey: string) {
@@ -90,7 +93,9 @@ function formName(configKey: string) {
 function parseValue(value: unknown, type: ConfigFieldType) {
   if (type === "boolean") {
     if (typeof value === "boolean") return value;
-    return String(value ?? "").trim().toLowerCase() in ["1", "true", "yes", "on"];
+    return ["1", "true", "yes", "on"].includes(
+      String(value ?? "").trim().toLowerCase()
+    );
   }
   if (type === "number") {
     const numeric = Number(value);
@@ -271,6 +276,24 @@ export default function ConfigsPage() {
             <Typography.Text type="secondary">
               API Key 不写入运行时配置表，后端通过环境变量读取。
             </Typography.Text>
+          </Card>
+
+          <Card className="soft-card" title="图片 OCR 补充">
+            <div className="settings-grid">
+              <Form.Item
+                name="ocr_enabled"
+                label="启用活动图片 OCR 补充"
+                valuePropName="checked"
+              >
+                <Switch />
+              </Form.Item>
+              <Form.Item label="API 配置">
+                <Input
+                  disabled
+                  value="由后端环境变量 OCR_API_BASE、OCR_API_KEY、OCR_MODEL 管理"
+                />
+              </Form.Item>
+            </div>
           </Card>
         </Space>
       </Form>

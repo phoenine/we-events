@@ -16,6 +16,11 @@ _FALLBACK_USER_AGENTS = [
 ]
 
 
+def wechat_error_code(ret: Any) -> str | None:
+    """仅将微信明确的会话失效返回码标记为 Invalid Session。"""
+    return "Invalid Session" if str(ret) == "200003" else None
+
+
 @dataclass
 class WxGatherHooks:
     """WxGather 的副作用钩子（由编排层注入）。
@@ -356,11 +361,12 @@ class WxGather:
                 self.Error("frequencey control, stop at {}".format(str(kw)))
                 return
             if msg["base_resp"]["ret"] != 0:
+                ret = msg["base_resp"]["ret"]
                 self.Error(
                     "错误原因:{}:代码:{}".format(
-                        msg["base_resp"]["err_msg"], msg["base_resp"]["ret"]
+                        msg["base_resp"]["err_msg"], ret
                     ),
-                    code="Invalid Session",
+                    code=wechat_error_code(ret),
                 )
                 return
         except Exception as e:
@@ -394,8 +400,7 @@ class WxGather:
         """错误处理。
 
         - 副作用（清会话/通知/清队列等）交由 hooks.on_error 处理。
-        - 对于 "Invalid Session"：保持历史行为，不抛异常，便于调用方优雅退出。
-        - 其他错误：抛出异常。
+        - 所有错误都向上传播，由调用方负责重试和记录失败状态。
         """
         try:
             if self.hooks and self.hooks.on_error:
@@ -410,10 +415,6 @@ class WxGather:
                 )
         except Exception:
             pass
-
-        if code == "Invalid Session":
-            logger.error(error)
-            return
 
         raise Exception(error)
 

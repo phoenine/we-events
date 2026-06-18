@@ -75,6 +75,36 @@ export interface Activity {
   updated_at?: string;
 }
 
+export interface ActivityImageOcrResult {
+  id: string;
+  position?: number;
+  text: string;
+  provider?: string;
+}
+
+export interface ActivityImageEnrichmentContext {
+  activity: Activity;
+  missing_fields: string[];
+  image_count: number;
+  images: Array<{
+    id: string;
+    public_url?: string;
+    origin_url?: string;
+    position?: number;
+    ocr_status?: "pending" | "completed" | "failed";
+  }>;
+  ocr_enabled: boolean;
+}
+
+export interface ActivityImageEnrichmentPreview {
+  activity_id: string;
+  current: Activity;
+  suggestions: Partial<Activity>;
+  evidence: Array<Record<string, unknown>>;
+  warnings: string[];
+  images: ActivityImageOcrResult[];
+}
+
 export interface ConfigItem {
   key: string;
   value: unknown;
