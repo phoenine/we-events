@@ -13,7 +13,7 @@ from core.articles.collection_policy import (
     is_older_than_cutoff,
 )
 from core.common.log import logger
-from core.integrations.wx.base import WxGather
+from core.integrations.wx.base import WxGather, wechat_error_code
 
 
 class WechatAccountApi(WxGather):
@@ -199,7 +199,7 @@ class WechatAccountApi(WxGather):
                 err_msg = base_resp.get("err_msg", "")
                 self.Error(
                     f"错误原因:{err_msg}:代码:{ret}",
-                    code="Invalid Session",
+                    code=wechat_error_code(ret),
                 )
                 return
 

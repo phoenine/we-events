@@ -209,10 +209,10 @@ async def get_prev_article(
         )
 
 
-@router.delete("/clean_expired", summary="清理过期文章(删除15天前的publish_time)")
+@router.delete("/clean_expired", summary="清理过期文章(删除7天前的publish_time)")
 async def clean_expired_articles(_current_user: dict = Depends(get_current_user)):
     try:
-        cutoff_ts = int((datetime.now(timezone.utc) - timedelta(days=15)).timestamp())
+        cutoff_ts = int((datetime.now(timezone.utc) - timedelta(days=7)).timestamp())
         expired_rows_raw = await article_repo.get_articles_base(
             filters={"publish_time": {"lt": cutoff_ts}}
         )
@@ -223,7 +223,7 @@ async def clean_expired_articles(_current_user: dict = Depends(get_current_user)
         for article in expired_rows:
             storage_deleted_count += await delete_article_storage_objects(article)
 
-        deleted_count = await article_repo.clean_expired_articles(days=15)
+        deleted_count = await article_repo.clean_expired_articles(days=7)
         await _safe_delete_article_image_mappings(article_ids)
         return success_response(
             {

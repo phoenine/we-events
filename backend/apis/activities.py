@@ -6,10 +6,19 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, status as fa
 
 from core.activities import activity_repo, activity_run_repo
 from core.activities.extraction_output import compute_event_status
+from core.activities.image_enrichment import (
+    ActivityImageEnrichmentError,
+    ActivityImageOcrUpstreamError,
+    build_image_enrichment_preview,
+    get_image_enrichment_context,
+)
+from core.activities.image_enrichment_agent import ImageEnrichmentConfigurationError
+from core.activities.ocr_client import OcrConfigurationError
 from core.activities.service import start_activity_extraction
 from core.articles import article_repo
 from core.common.log import logger
-from core.integrations.supabase.auth import get_current_user
+from core.common.runtime_settings import runtime_settings
+from core.integrations.supabase.auth import get_current_admin_user, get_current_user
 from schemas import ActivityCreate, ActivityUpdate, error_response, success_response
 
 
@@ -61,6 +70,81 @@ async def get_activity_extraction_run(
         raise HTTPException(
             status_code=fast_status.HTTP_400_BAD_REQUEST,
             detail=error_response(code=40007, message=f"获取失败: {str(exc)}"),
+        )
+
+
+@router.get(
+    "/{activity_id}/image-enrichment-context",
+    summary="获取活动图片补充上下文",
+)
+async def activity_image_enrichment_context(
+    activity_id: str,
+    _current_user: dict = Depends(get_current_user),
+):
+    try:
+        context = await get_image_enrichment_context(activity_id)
+        context["ocr_enabled"] = await runtime_settings.get_bool("ocr.enabled", False)
+        return success_response(context)
+    except ActivityImageEnrichmentError as exc:
+        status_code = (
+            fast_status.HTTP_404_NOT_FOUND
+            if "不存在" in str(exc)
+            else fast_status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(
+            status_code=status_code,
+            detail=error_response(code=status_code, message=str(exc)),
+        )
+    except Exception as exc:
+        logger.exception(f"[activities.image-enrichment.context] failed: {exc}")
+        raise HTTPException(
+            status_code=fast_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=50012, message="获取图片补充上下文失败"),
+        )
+
+
+@router.post(
+    "/{activity_id}/image-enrichment-preview",
+    summary="生成活动图片补充预览",
+)
+async def preview_activity_image_enrichment(
+    activity_id: str,
+    _current_user: dict = Depends(get_current_admin_user),
+):
+    if not await runtime_settings.get_bool("ocr.enabled", False):
+        raise HTTPException(
+            status_code=fast_status.HTTP_409_CONFLICT,
+            detail=error_response(code=40912, message="图片 OCR 补充功能未启用"),
+        )
+    try:
+        preview = await build_image_enrichment_preview(activity_id)
+        return success_response(preview)
+    except (OcrConfigurationError, ImageEnrichmentConfigurationError):
+        raise HTTPException(
+            status_code=fast_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=error_response(code=50312, message="OCR 或 LLM API 未配置"),
+        )
+    except ActivityImageOcrUpstreamError as exc:
+        logger.warning(f"[activities.image-enrichment.ocr] upstream failed: {exc}")
+        raise HTTPException(
+            status_code=fast_status.HTTP_502_BAD_GATEWAY,
+            detail=error_response(code=50213, message="OCR 服务暂时不可用"),
+        )
+    except ActivityImageEnrichmentError as exc:
+        status_code = (
+            fast_status.HTTP_404_NOT_FOUND
+            if "不存在" in str(exc)
+            else fast_status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(
+            status_code=status_code,
+            detail=error_response(code=status_code, message=str(exc)),
+        )
+    except Exception as exc:
+        logger.exception(f"[activities.image-enrichment.preview] failed: {exc}")
+        raise HTTPException(
+            status_code=fast_status.HTTP_502_BAD_GATEWAY,
+            detail=error_response(code=50212, message="生成图片补充建议失败"),
         )
 
 

@@ -8,21 +8,49 @@ import {
   TeamOutlined,
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Card, DatePicker, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Tag, Typography } from "antd";
+import { Alert, App, Button, Card, Checkbox, DatePicker, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Tag, Typography } from "antd";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
-import { deleteActivity, getActivityExtractionRun, listActivities } from "@/api/activities";
+import {
+  deleteActivity,
+  getActivityExtractionRun,
+  getActivityImageEnrichmentContext,
+  listActivities,
+  previewActivityImageEnrichment,
+  updateActivity,
+} from "@/api/activities";
 import EmptyState from "@/components/common/EmptyState";
 import PageHeader from "@/components/common/PageHeader";
-import type { Activity } from "@/types/api";
+import { useAuthStore } from "@/store/authStore";
+import type { Activity, ActivityImageEnrichmentPreview } from "@/types/api";
 import {
   loadActivityExtractionRuns,
   removeActivityExtractionRuns,
 } from "@/utils/activityExtractionRuns";
 import { buildIcsEvent, downloadIcs } from "@/utils/calendar";
+import {
+  buildConfirmedEnrichmentUpdate,
+  defaultSelectedSuggestionFields,
+  ENRICHABLE_ACTIVITY_FIELDS,
+  hasCriticalActivityGap,
+  isActivityEnrichmentPreviewCurrent,
+  type EnrichableActivityField,
+} from "@/utils/activityImageEnrichment";
 
 const { TextArea } = Input;
+
+const enrichmentFieldLabels: Record<EnrichableActivityField, string> = {
+  event_time_text: "活动时间原文",
+  start_at: "开始时间",
+  end_at: "结束时间",
+  location_text: "地点",
+  registration_text: "报名说明",
+  registration_method: "报名方式",
+  registration_url: "报名链接",
+  fee_text: "费用",
+  audience: "目标人群",
+};
 
 interface CalendarFormValues {
   title: string;
@@ -92,8 +120,14 @@ function getDefaultCalendarRange(activity: Activity) {
 }
 
 export default function ActivitiesPage() {
+  const currentUser = useAuthStore((state) => state.user);
   const [selected, setSelected] = useState<Activity | null>(null);
   const [calendarActivity, setCalendarActivity] = useState<Activity | null>(null);
+  const [enrichmentPreview, setEnrichmentPreview] =
+    useState<ActivityImageEnrichmentPreview | null>(null);
+  const [selectedEnrichmentFields, setSelectedEnrichmentFields] = useState<
+    EnrichableActivityField[]
+  >([]);
   const [calendarForm] = Form.useForm<CalendarFormValues>();
   const queryClient = useQueryClient();
   const { message } = App.useApp();
@@ -108,6 +142,60 @@ export default function ActivitiesPage() {
       setSelected(null);
       queryClient.invalidateQueries({ queryKey: ["activities"] });
     },
+  });
+  const enrichmentContext = useQuery({
+    queryKey: ["activity-image-enrichment-context", selected?.id],
+    queryFn: () => getActivityImageEnrichmentContext(selected!.id),
+    enabled: Boolean(selected && hasCriticalActivityGap(selected)),
+  });
+  const previewEnrichment = useMutation({
+    mutationFn: (activityId: string) => previewActivityImageEnrichment(activityId),
+    onSuccess: (preview) => {
+      if (!isActivityEnrichmentPreviewCurrent(selected, preview)) {
+        message.warning("活动已切换，请重新生成图片补充建议");
+        return;
+      }
+      setEnrichmentPreview(preview);
+      setSelectedEnrichmentFields(
+        defaultSelectedSuggestionFields(preview.current, preview)
+      );
+    },
+    onError: (error) => {
+      const text = error instanceof Error ? error.message : "图片信息读取失败";
+      if (text.includes("OCR") || text.includes("未配置") || text.includes("未启用")) {
+        message.warning(text);
+      } else {
+        message.error(text);
+      }
+    },
+  });
+  const applyEnrichment = useMutation({
+    mutationFn: async () => {
+      const preview = enrichmentPreview;
+      if (!preview || !isActivityEnrichmentPreviewCurrent(selected, preview)) {
+        throw new Error("活动已切换，请重新生成图片补充建议");
+      }
+      const payload = buildConfirmedEnrichmentUpdate(
+        preview.current,
+        preview,
+        selectedEnrichmentFields
+      );
+      const activityId = preview.activity_id;
+      const updated = await updateActivity(activityId, payload);
+      return { activityId, updated };
+    },
+    onSuccess: ({ activityId, updated }) => {
+      if (selected?.id === activityId) setSelected(updated);
+      setEnrichmentPreview(null);
+      setSelectedEnrichmentFields([]);
+      message.success("活动信息已补充");
+      queryClient.invalidateQueries({ queryKey: ["activities"] });
+      queryClient.invalidateQueries({
+        queryKey: ["activity-image-enrichment-context", activityId],
+      });
+    },
+    onError: (error) =>
+      message.error(error instanceof Error ? error.message : "保存补充信息失败"),
   });
 
   const activities = useMemo(() => {
@@ -270,7 +358,16 @@ export default function ActivitiesPage() {
         )}
       </Card>
 
-      <Drawer title={selected?.title || "活动详情"} open={!!selected} onClose={() => setSelected(null)} width={620}>
+      <Drawer
+        title={selected?.title || "活动详情"}
+        open={!!selected}
+        onClose={() => {
+          setSelected(null);
+          setEnrichmentPreview(null);
+          setSelectedEnrichmentFields([]);
+        }}
+        width={620}
+      >
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <Space wrap>
             <Tag color={getEventMeta(selected?.event_status).color}>{getEventMeta(selected?.event_status).label}</Tag>
@@ -307,9 +404,22 @@ export default function ActivitiesPage() {
             </div>
           )}
           {selected && (
-            <Button icon={<ScheduleOutlined />} onClick={() => openCalendarModal(selected)}>
-              添加到日历
-            </Button>
+            <Space wrap>
+              <Button icon={<ScheduleOutlined />} onClick={() => openCalendarModal(selected)}>
+                添加到日历
+              </Button>
+              {currentUser?.role === "admin" &&
+                hasCriticalActivityGap(selected) &&
+                enrichmentContext.data?.ocr_enabled &&
+                enrichmentContext.data.image_count > 0 && (
+                  <Button
+                    loading={previewEnrichment.isPending}
+                    onClick={() => previewEnrichment.mutate(selected.id)}
+                  >
+                    从图片补充
+                  </Button>
+                )}
+            </Space>
           )}
           <Popconfirm title="删除这个活动？" onConfirm={() => selected && remove.mutate(selected.id)}>
             <Button danger icon={<DeleteOutlined />} loading={remove.isPending}>
@@ -318,6 +428,73 @@ export default function ActivitiesPage() {
           </Popconfirm>
         </Space>
       </Drawer>
+
+      <Modal
+        title="从图片补充活动信息"
+        open={isActivityEnrichmentPreviewCurrent(selected, enrichmentPreview)}
+        okText="确认更新"
+        cancelText="取消"
+        confirmLoading={applyEnrichment.isPending}
+        okButtonProps={{ disabled: !selectedEnrichmentFields.length }}
+        onCancel={() => {
+          setEnrichmentPreview(null);
+          setSelectedEnrichmentFields([]);
+        }}
+        onOk={() => applyEnrichment.mutate()}
+        width={760}
+      >
+        {enrichmentPreview && (
+          <Space direction="vertical" size={16} style={{ width: "100%" }}>
+            <Typography.Text type="secondary">
+              已读取 {enrichmentPreview.images.length} 张文章图片。请选择需要写入的建议字段；已有值默认不会覆盖。
+            </Typography.Text>
+            <Checkbox.Group
+              value={selectedEnrichmentFields}
+              onChange={(values) =>
+                setSelectedEnrichmentFields(values as EnrichableActivityField[])
+              }
+              style={{ width: "100%" }}
+            >
+              <Space direction="vertical" style={{ width: "100%" }}>
+                {ENRICHABLE_ACTIVITY_FIELDS.filter(
+                  (field) => enrichmentPreview.suggestions[field] !== undefined
+                ).map((field) => (
+                  <Card key={field} size="small">
+                    <Checkbox value={field}>{enrichmentFieldLabels[field]}</Checkbox>
+                    <div style={{ marginTop: 8 }}>
+                      <Typography.Text type="secondary">当前：</Typography.Text>{" "}
+                      <Typography.Text>
+                        {String(enrichmentPreview.current[field] || "-")}
+                      </Typography.Text>
+                    </div>
+                    <div>
+                      <Typography.Text type="secondary">建议：</Typography.Text>{" "}
+                      <Typography.Text strong>
+                        {String(enrichmentPreview.suggestions[field] || "-")}
+                      </Typography.Text>
+                    </div>
+                  </Card>
+                ))}
+              </Space>
+            </Checkbox.Group>
+            {!!enrichmentPreview.evidence.length && (
+              <Card size="small" title="识别证据">
+                <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>
+                  {JSON.stringify(enrichmentPreview.evidence, null, 2)}
+                </pre>
+              </Card>
+            )}
+            {!!enrichmentPreview.warnings.length && (
+              <Alert
+                type="warning"
+                showIcon
+                message="部分图片或字段需要人工确认"
+                description={enrichmentPreview.warnings.join("；")}
+              />
+            )}
+          </Space>
+        )}
+      </Modal>
 
       <Modal
         title="添加到日历"

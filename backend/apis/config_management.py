@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body, Path, Query, status
 
-from core.integrations.supabase.auth import get_current_user
+from core.integrations.supabase.auth import get_current_admin_user, get_current_user
 from core.integrations.supabase.config_store import config_store
 from schemas import success_response, error_response, ConfigManagementCreate
 
@@ -56,7 +56,7 @@ async def get_config(
 @router.post("", summary="创建配置项")
 async def create_config(
     config_data: ConfigManagementCreate = Body(...),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_admin_user),
 ):
     """创建配置项"""
     try:
@@ -85,7 +85,7 @@ async def create_config(
 async def update_config(
     config_key: str = Path(..., min_length=1),
     config_data: ConfigManagementCreate = Body(...),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_admin_user),
 ):
     """更新配置项"""
     try:
@@ -111,7 +111,7 @@ async def update_config(
 @router.delete("/{config_key}", summary="删除配置项")
 async def delete_config(
     config_key: str,
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_admin_user),
 ):
     """删除配置项"""
     try:

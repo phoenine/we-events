@@ -1,5 +1,9 @@
 import http from "@/api/http";
-import type { Activity } from "@/types/api";
+import type {
+  Activity,
+  ActivityImageEnrichmentContext,
+  ActivityImageEnrichmentPreview,
+} from "@/types/api";
 
 export function listActivities(params?: {
   offset?: number;
@@ -33,7 +37,7 @@ export function createActivity(payload: Partial<Activity>) {
   return http.post("/wx/activities", payload);
 }
 
-export function updateActivity(id: string, payload: Partial<Activity>) {
+export function updateActivity(id: string, payload: Partial<Activity>): Promise<Activity> {
   return http.patch(`/wx/activities/${id}`, payload);
 }
 
@@ -47,4 +51,16 @@ export function extractArticleActivities(articleId: string) {
 
 export function getActivityExtractionRun(runId: string) {
   return http.get(`/wx/activities/extraction-runs/${runId}`);
+}
+
+export function getActivityImageEnrichmentContext(
+  activityId: string
+): Promise<ActivityImageEnrichmentContext> {
+  return http.get(`/wx/activities/${activityId}/image-enrichment-context`);
+}
+
+export function previewActivityImageEnrichment(
+  activityId: string
+): Promise<ActivityImageEnrichmentPreview> {
+  return http.post(`/wx/activities/${activityId}/image-enrichment-preview`);
 }

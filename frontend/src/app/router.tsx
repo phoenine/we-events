@@ -32,7 +32,14 @@ export const router = createBrowserRouter([
       { path: "wechat-accounts/add", element: <AddWechatAccountPage /> },
       { path: "wechat-account-groups", element: <WechatAccountGroupsPage /> },
       { path: "activities", element: <ActivitiesPage /> },
-      { path: "configs", element: <ConfigsPage /> },
+      {
+        path: "configs",
+        element: (
+          <AdminOnly>
+            <ConfigsPage />
+          </AdminOnly>
+        ),
+      },
       {
         path: "sys",
         element: (

@@ -269,6 +269,21 @@ async def get_current_user(
     return user
 
 
+async def get_current_admin_user(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Require an active administrator for system-wide mutations."""
+    if (
+        str(current_user.get("role") or "user") != "admin"
+        or str(current_user.get("status") or "active") != "active"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="需要管理员权限",
+        )
+    return current_user
+
+
 async def get_current_user_optional(
     token: str = Depends(oauth2_scheme),
 ) -> Optional[Dict[str, Any]]:
