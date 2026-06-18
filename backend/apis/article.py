@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, status as fast_status, Query, Body
 from core.integrations.supabase.auth import get_current_user
 from core.articles import article_repo
@@ -10,6 +12,7 @@ from typing import Optional, List, Dict, Any, cast
 from datetime import datetime, timedelta, timezone
 
 router = APIRouter(prefix="/articles", tags=["文章管理"])
+_reclassify_content_status_lock = asyncio.Lock()
 
 
 async def _safe_delete_article_image_mapping(article_id: str) -> None:
@@ -294,12 +297,18 @@ async def reclassify_content_status(
     dry_run: bool = Query(False),
     _current_user: dict = Depends(get_current_user),
 ):
-    try:
-        summary = await reclassify_article_content_statuses(
-            article_repo,
-            limit=limit,
-            dry_run=dry_run,
+    if _reclassify_content_status_lock.locked():
+        raise HTTPException(
+            status_code=fast_status.HTTP_409_CONFLICT,
+            detail=error_response(code=40901, message="重分类任务正在运行"),
         )
+    try:
+        async with _reclassify_content_status_lock:
+            summary = await reclassify_article_content_statuses(
+                article_repo,
+                limit=limit,
+                dry_run=dry_run,
+            )
         return success_response(summary)
     except Exception as e:
         logger.error(f"重分类文章正文抓取状态失败: {str(e)}")

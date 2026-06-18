@@ -29,6 +29,10 @@ class RuntimeSettings:
             "interval": os.getenv("SPAN_INTERVAL", default),
             "gather.content": os.getenv("GATHER_CONTENT", default),
             "gather.model": os.getenv("GATHER_MODEL", default),
+            "collection.max_article_age_days": os.getenv("COLLECTION_MAX_ARTICLE_AGE_DAYS", default),
+            "collection.repair_failed_existing": os.getenv("COLLECTION_REPAIR_FAILED_EXISTING", default),
+            "collection.max_attempts": os.getenv("COLLECTION_MAX_ATTEMPTS", default),
+            "image.retry_count": os.getenv("IMAGE_RETRY_COUNT", default),
         }
         return fallback_map.get(key, default)
 

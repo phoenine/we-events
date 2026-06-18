@@ -58,6 +58,16 @@ class ArticleQualityTest(unittest.TestCase):
         self.assertEqual(quality, ArticleContentQuality.EMPTY)
         self.assertEqual(content_fetch_status_for_quality(quality), "failed")
 
+    def test_markdown_link_text_counts_as_content(self):
+        quality = classify_article_content(
+            {
+                "content_md": "[Release notes](https://example.com/release-notes)",
+            },
+            image_count=0,
+        )
+
+        self.assertEqual(quality, ArticleContentQuality.FETCHED)
+
     def test_quality_update_records_reason_for_image_only_fallback(self):
         update = build_content_quality_update({"content": ""}, image_count=1)
 

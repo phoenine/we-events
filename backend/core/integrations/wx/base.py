@@ -107,9 +107,13 @@ class WxGather:
 
     def query_existing_article_ids(self, aids: list[str]) -> set[str]:
         """批量查询数据库中已存在的文章 ID。"""
+        return set(self.query_existing_articles(aids).keys())
+
+    def query_existing_articles(self, aids: list[str]) -> dict[str, dict]:
+        """批量查询数据库中已存在的文章摘要状态。"""
         ids = sorted({str(aid).strip() for aid in (aids or []) if str(aid).strip()})
         if not ids:
-            return set()
+            return {}
         try:
             from core.articles import article_repo
 
@@ -117,10 +121,14 @@ class WxGather:
                 filters={"id": {"in": ids}},
                 limit=len(ids),
             )
-            return {str((row or {}).get("id")) for row in (rows or []) if (row or {}).get("id")}
+            return {
+                str((row or {}).get("id")): dict(row or {})
+                for row in (rows or [])
+                if (row or {}).get("id")
+            }
         except Exception as e:
             logger.warning(f"查询已存在文章失败，回退为不跳过: {e}")
-            return set()
+            return {}
 
     def _derive_mp_token_from_cookies(
         self, cookies: str, headers: dict | None = None

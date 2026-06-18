@@ -31,9 +31,14 @@ def collect_wechat_account_articles(
     wx = create_gather()
     gather_content = runtime_settings.get_bool_sync("gather.content", True)
     gather_mode = runtime_settings.get_sync("gather.model", "app")
+    max_article_age_days = runtime_settings.get_int_sync("collection.max_article_age_days", 7)
+    repair_failed_existing = runtime_settings.get_bool_sync(
+        "collection.repair_failed_existing", True
+    )
     logger.info(
         f"[collect-wechat-account] wechat_account_id={wechat_account_id} mode={gather_mode} gather_content={gather_content} "
-        f"start_page={start_page} max_page={max_page}"
+        f"start_page={start_page} max_page={max_page} max_article_age_days={max_article_age_days} "
+        f"repair_failed_existing={repair_failed_existing}"
     )
     try:
         wx.get_Articles(
@@ -46,6 +51,8 @@ def collect_wechat_account_articles(
             MaxPage=max_page,
             interval=interval if interval is not None else 0,
             Gather_Content=gather_content,
+            MaxArticleAgeDays=max_article_age_days,
+            RepairFailedExisting=repair_failed_existing,
         )
     except Exception as e:
         logger.error(f"采集公众号[{account_name or wechat_account_id}]失败: {e}")

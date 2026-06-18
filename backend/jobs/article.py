@@ -1,17 +1,22 @@
 from core.articles import article_repo
 from core.common.app_settings import settings
 from core.common.log import logger
+from core.common.runtime_settings import runtime_settings
 from core.common.utils.async_tools import run_sync
 from core.integrations.supabase.storage import supabase_storage_articles
 from core.articles.content_format import format_content
 from core.articles.quality import (
     build_content_quality_update,
 )
+from core.articles.collection_policy import (
+    should_reset_activity_extraction_after_content_repair,
+)
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 import mimetypes
 import re
 import requests
+import time
 import uuid
 
 ARTICLE_COLUMNS = {
@@ -85,7 +90,39 @@ def _format_storage_path(template: str, values: dict[str, str]) -> str:
     return re.sub(r"\{([a-zA-Z0-9_]+)\}", replace, template)
 
 
-def _upload_article_images(article: dict) -> tuple[dict, list[dict]]:
+def _download_image_with_retries(
+    image_url: str,
+    *,
+    retry_count: int,
+    backoff_seconds: float,
+):
+    attempts = max(1, int(retry_count or 1))
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.get(image_url, timeout=15)
+            resp.raise_for_status()
+            return resp
+        except requests.HTTPError as exc:
+            status_code = getattr(getattr(exc, "response", None), "status_code", 0) or 0
+            if 400 <= status_code < 500 and status_code not in {408, 429}:
+                raise
+            last_error = exc
+        except Exception as exc:
+            last_error = exc
+        if attempt < attempts and backoff_seconds > 0:
+            time.sleep(backoff_seconds * attempt)
+    if last_error:
+        raise last_error
+    raise RuntimeError("图片下载失败")
+
+
+def _upload_article_images(
+    article: dict,
+    *,
+    image_retry_count: int | None = None,
+    image_retry_backoff_seconds: float = 1.0,
+) -> tuple[dict, list[dict]]:
     content = str(article.get("content") or "")
     if not content or not supabase_storage_articles.valid():
         return article, []
@@ -102,6 +139,12 @@ def _upload_article_images(article: dict) -> tuple[dict, list[dict]]:
     stat_reuse_public_url = 0
     stat_reuse_existing_object = 0
     stat_uploaded = 0
+    stat_failed = 0
+    retry_count = (
+        int(image_retry_count)
+        if image_retry_count is not None
+        else runtime_settings.get_int_sync("image.retry_count", 2)
+    )
 
     for i, img in enumerate(images, start=1):
         src = (img.get("src") or img.get("data-src") or "").strip()
@@ -140,8 +183,11 @@ def _upload_article_images(article: dict) -> tuple[dict, list[dict]]:
             # 目标已存在则直接复用，避免重复下载和上传
             exists = run_sync(supabase_storage_articles.exists(path))
             if not exists:
-                resp = requests.get(src, timeout=15)
-                resp.raise_for_status()
+                resp = _download_image_with_retries(
+                    src,
+                    retry_count=retry_count,
+                    backoff_seconds=image_retry_backoff_seconds,
+                )
                 ctype = (resp.headers.get("Content-Type") or "image/jpeg").split(";")[0]
                 run_sync(
                     supabase_storage_articles.upload_bytes(
@@ -167,13 +213,14 @@ def _upload_article_images(article: dict) -> tuple[dict, list[dict]]:
                 }
             )
         except Exception as e:
+            stat_failed += 1
             logger.warning(f"文章图片上传失败，保留原链接: {e}")
 
     if stat_total > 0:
         logger.info(
             f"[dedup-debug] article_id={article_id} image_total={stat_total} "
             f"reuse_public={stat_reuse_public_url} reuse_existing_object={stat_reuse_existing_object} "
-            f"uploaded={stat_uploaded}"
+            f"uploaded={stat_uploaded} failed={stat_failed}"
         )
 
     article["content"] = str(soup)
@@ -229,12 +276,16 @@ def UpdateArticle(art: dict, check_exist: bool = False):
         art = _ensure_content_markdown(art)
         art.update(build_content_quality_update(art, image_count=len(image_mappings)))
         if existing_article:
-            art["activity_extraction_status"] = existing_article.get(
-                "activity_extraction_status"
-            ) or "pending"
-            art["activity_extraction_error"] = existing_article.get(
-                "activity_extraction_error"
-            )
+            if should_reset_activity_extraction_after_content_repair(existing_article, art):
+                art["activity_extraction_status"] = "pending"
+                art["activity_extraction_error"] = ""
+            else:
+                art["activity_extraction_status"] = existing_article.get(
+                    "activity_extraction_status"
+                ) or "pending"
+                art["activity_extraction_error"] = existing_article.get(
+                    "activity_extraction_error"
+                )
         else:
             art["activity_extraction_status"] = "pending"
         art = _normalize_article_for_db(art)

@@ -43,7 +43,7 @@ def _plain_text(value: str) -> str:
     except Exception:
         text = html.strip()
     text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)
-    text = re.sub(r"\[[^\]]*\]\([^)]+\)", "", text)
+    text = re.sub(r"\[([^\]]*)\]\([^)]+\)", r"\1", text)
     text = URL_RE.sub("", text)
     return text.strip()
 
