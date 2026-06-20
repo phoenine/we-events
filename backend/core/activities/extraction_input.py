@@ -1,12 +1,39 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
 
 from core.articles import article_repo
 from core.wechat_accounts import wechat_account_repo
+
+
+def format_article_publish_date(
+    value: Any,
+    timezone_name: str = "Asia/Shanghai",
+) -> str:
+    if value in (None, ""):
+        return ""
+
+    tz = ZoneInfo(timezone_name)
+    try:
+        if isinstance(value, datetime):
+            published_at = value
+        elif isinstance(value, (int, float)) or str(value).strip().isdigit():
+            timestamp = float(value)
+            if timestamp > 10_000_000_000:
+                timestamp /= 1000
+            published_at = datetime.fromtimestamp(timestamp, tz)
+        else:
+            published_at = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+        return published_at.astimezone(tz).date().isoformat()
+    except (TypeError, ValueError, OSError):
+        return ""
 
 
 def html_to_text(html: str) -> str:
@@ -68,6 +95,7 @@ async def build_activity_extraction_input(article_id: str) -> dict[str, Any]:
     markdown = str(article.get("content_md") or "").strip()
     text = markdown or html_to_text(str(article.get("content") or ""))
     images = await article_repo.get_article_images(article_id)
+    publish_date = format_article_publish_date(article.get("publish_time"))
 
     return {
         "article": {
@@ -76,6 +104,7 @@ async def build_activity_extraction_input(article_id: str) -> dict[str, Any]:
             "description": article.get("description") or "",
             "url": article.get("url") or "",
             "publish_time": article.get("publish_time"),
+            "publish_date": publish_date,
             "wechat_account": {
                 "id": wechat_account_id or "",
                 "name": (account or {}).get("name") or "",
@@ -89,7 +118,6 @@ async def build_activity_extraction_input(article_id: str) -> dict[str, Any]:
         "images": build_image_contexts(text, images),
         "options": {
             "timezone": "Asia/Shanghai",
-            "today": datetime.now().date().isoformat(),
             "language": "zh-CN",
         },
     }

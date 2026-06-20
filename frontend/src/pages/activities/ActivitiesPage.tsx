@@ -37,6 +37,7 @@ import {
   isActivityEnrichmentPreviewCurrent,
   type EnrichableActivityField,
 } from "@/utils/activityImageEnrichment";
+import { removeIdsFromList } from "@/utils/optimisticDelete";
 
 const { TextArea } = Input;
 
@@ -137,11 +138,24 @@ export default function ActivitiesPage() {
   });
   const remove = useMutation({
     mutationFn: deleteActivity,
-    onSuccess: () => {
-      message.success("活动已删除");
-      setSelected(null);
-      queryClient.invalidateQueries({ queryKey: ["activities"] });
+    onMutate: async (activityId) => {
+      await queryClient.cancelQueries({ queryKey: ["activities"] });
+      const snapshots = queryClient.getQueriesData<Activity[]>({
+        queryKey: ["activities"],
+      });
+      queryClient.setQueriesData<Activity[]>(
+        { queryKey: ["activities"] },
+        (data) => removeIdsFromList(data, [activityId])
+      );
+      setSelected((current) => (current?.id === activityId ? null : current));
+      return { snapshots };
     },
+    onSuccess: () => message.success("活动已删除"),
+    onError: (error, _activityId, context) => {
+      context?.snapshots.forEach(([key, data]) => queryClient.setQueryData(key, data));
+      message.error(error instanceof Error ? error.message : "删除活动失败");
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["activities"] }),
   });
   const enrichmentContext = useQuery({
     queryKey: ["activity-image-enrichment-context", selected?.id],
@@ -346,7 +360,13 @@ export default function ActivitiesPage() {
                       </Button>
                     )}
                     <Popconfirm title="删除这个活动？" onConfirm={() => remove.mutate(activity.id)}>
-                      <Button danger type="text" size="small" icon={<DeleteOutlined />} />
+                      <Button
+                        danger
+                        type="text"
+                        size="small"
+                        icon={<DeleteOutlined />}
+                        disabled={remove.isPending}
+                      />
                     </Popconfirm>
                   </div>
                 </Card>
@@ -422,7 +442,12 @@ export default function ActivitiesPage() {
             </Space>
           )}
           <Popconfirm title="删除这个活动？" onConfirm={() => selected && remove.mutate(selected.id)}>
-            <Button danger icon={<DeleteOutlined />} loading={remove.isPending}>
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              loading={remove.isPending}
+              disabled={remove.isPending}
+            >
               删除活动
             </Button>
           </Popconfirm>

@@ -16,6 +16,7 @@ from core.activities.extraction_output import (
     compute_event_status,
     compute_review_status,
     infer_start_at_from_event_text,
+    normalize_relative_event_time,
 )
 from core.articles import article_repo
 from core.common.log import logger
@@ -71,8 +72,12 @@ def _activity_row(
 ) -> dict[str, Any]:
     raw_activity = activity.model_dump(mode="json")
     warnings = [str(item) for item in activity.warnings if str(item).strip()]
-    start_at = activity.start_at or infer_start_at_from_event_text(
+    event_time_text, relative_start_at = normalize_relative_event_time(
         activity.event_time_text,
+        reference_timestamp=article.get("publish_time"),
+    )
+    start_at = relative_start_at or activity.start_at or infer_start_at_from_event_text(
+        event_time_text,
         reference_timestamp=article.get("publish_time"),
     )
     end_at = activity.end_at
@@ -88,7 +93,7 @@ def _activity_row(
         "article_url": article.get("url") or "",
         "title": activity.title,
         "summary": activity.summary,
-        "event_time_text": activity.event_time_text,
+        "event_time_text": event_time_text,
         "start_at": start_at,
         "end_at": end_at,
         "event_status": event_status,

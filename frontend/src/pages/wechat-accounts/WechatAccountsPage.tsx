@@ -19,12 +19,13 @@ import {
 } from "@/api/wechatAccounts";
 import EmptyState from "@/components/common/EmptyState";
 import PageHeader from "@/components/common/PageHeader";
-import type { WechatAccount } from "@/types/api";
+import type { ApiList, WechatAccount } from "@/types/api";
 import {
   addArticleCollectionRun,
   loadArticleCollectionRuns,
   removeArticleCollectionRuns,
 } from "@/utils/articleCollectionRuns";
+import { removeIdsFromApiList } from "@/utils/optimisticDelete";
 
 export default function WechatAccountsPage() {
   const [page, setPage] = useState(1);
@@ -58,10 +59,24 @@ export default function WechatAccountsPage() {
   });
   const remove = useMutation({
     mutationFn: deleteWechatAccount,
-    onSuccess: () => {
-      message.success("公众号已删除");
-      queryClient.invalidateQueries({ queryKey: ["wechat-accounts"] });
+    onMutate: async (accountId) => {
+      await queryClient.cancelQueries({ queryKey: ["wechat-accounts"] });
+      const snapshots = queryClient.getQueriesData<ApiList<WechatAccount>>({
+        queryKey: ["wechat-accounts"],
+      });
+      queryClient.setQueriesData<ApiList<WechatAccount>>(
+        { queryKey: ["wechat-accounts"] },
+        (data) => removeIdsFromApiList(data, [accountId])
+      );
+      return { snapshots };
     },
+    onSuccess: () => message.success("公众号已删除"),
+    onError: (error, _accountId, context) => {
+      context?.snapshots.forEach(([key, data]) => queryClient.setQueryData(key, data));
+      message.error(error instanceof Error ? error.message : "删除公众号失败");
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["wechat-accounts"] }),
   });
 
   useEffect(() => {
@@ -160,7 +175,12 @@ export default function WechatAccountsPage() {
             />
           </Tooltip>
           <Popconfirm title="删除这个公众号？" onConfirm={() => remove.mutate(record.id)}>
-            <Button danger type="text" icon={<DeleteOutlined />} />
+            <Button
+              danger
+              type="text"
+              icon={<DeleteOutlined />}
+              disabled={remove.isPending}
+            />
           </Popconfirm>
         </Space>
       ),
@@ -184,7 +204,11 @@ export default function WechatAccountsPage() {
                 setPage(1);
               }}
             />
-            <Button icon={<ReloadOutlined />} onClick={() => query.refetch()}>
+            <Button
+              icon={<ReloadOutlined />}
+              loading={query.isFetching}
+              onClick={() => query.refetch()}
+            >
               刷新
             </Button>
             {activeCollectionRunCount > 0 && <Tag color="processing">采集中 {activeCollectionRunCount}</Tag>}

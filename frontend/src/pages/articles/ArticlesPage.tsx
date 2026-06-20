@@ -1,9 +1,6 @@
 import {
   ClearOutlined,
   DeleteOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  SyncOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,21 +9,17 @@ import {
   Button,
   Card,
   Drawer,
-  Form,
-  InputNumber,
-  Modal,
   Popconfirm,
-  Select,
   Space,
   Table,
   Tag,
   Typography,
 } from "antd";
+import type { TableProps } from "antd";
 import type { TableRowSelection } from "antd/es/table/interface";
 import type { ColumnsType } from "antd/es/table";
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   cleanArticles,
   cleanDuplicateArticles,
@@ -39,84 +32,122 @@ import { extractArticleActivities, getActivityExtractionRun } from "@/api/activi
 import {
   getArticleCollectionRun,
   listWechatAccounts,
-  syncWechatAccountArticles,
 } from "@/api/wechatAccounts";
 import EmptyState from "@/components/common/EmptyState";
 import PageHeader from "@/components/common/PageHeader";
-import type { Article } from "@/types/api";
+import type { ApiList, Article } from "@/types/api";
 import {
   addActivityExtractionRun,
   loadActivityExtractionRuns,
   removeActivityExtractionRuns,
 } from "@/utils/activityExtractionRuns";
 import {
-  addArticleCollectionRun,
   loadArticleCollectionRuns,
   removeArticleCollectionRuns,
 } from "@/utils/articleCollectionRuns";
+import {
+  FILTERABLE_ACTIVITY_EXTRACTION_STATUSES,
+  buildArticleListParams,
+  type ArticleSortField,
+  type SortOrder,
+} from "@/utils/articleTableQuery";
+import { removeIdsFromApiList } from "@/utils/optimisticDelete";
 import { formatEpochSeconds } from "@/utils/time";
+
+const articleCleanupMessageKey = "article-cleanup";
+
+function toAntSortOrder(order: SortOrder) {
+  return order === "asc" ? ("ascend" as const) : ("descend" as const);
+}
 
 export default function ArticlesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [wechatAccountId, setWechatAccountId] = useState<string>();
+  const [activityExtractionStatus, setActivityExtractionStatus] = useState<string>();
+  const [sortBy, setSortBy] = useState<ArticleSortField>("publish_time");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [selected, setSelected] = useState<Article | null>(null);
   const [extractingArticleId, setExtractingArticleId] = useState<string>();
   const [activeExtractionRuns, setActiveExtractionRuns] = useState(loadActivityExtractionRuns);
   const [activeCollectionRuns, setActiveCollectionRuns] = useState(loadArticleCollectionRuns);
-  const [syncOpen, setSyncOpen] = useState(false);
-  const [syncForm] = Form.useForm();
   const queryClient = useQueryClient();
   const { message, modal } = App.useApp();
   const query = useQuery({
-    queryKey: ["articles", page, pageSize, wechatAccountId],
+    queryKey: [
+      "articles",
+      page,
+      pageSize,
+      wechatAccountId,
+      activityExtractionStatus,
+      sortBy,
+      sortOrder,
+    ],
     queryFn: () =>
-      listArticles({
+      listArticles(buildArticleListParams({
         offset: (page - 1) * pageSize,
         limit: pageSize,
-        wechat_account_id: wechatAccountId,
-      }),
+        wechatAccountId,
+        activityExtractionStatus,
+        sortBy,
+        sortOrder,
+      })),
   });
   const accountsQuery = useQuery({
     queryKey: ["wechat-accounts", "article-filter"],
     queryFn: () => listWechatAccounts({ offset: 0, limit: 100 }),
   });
+  const snapshotArticles = () =>
+    queryClient.getQueriesData<ApiList<Article>>({ queryKey: ["articles"] });
+  const restoreArticles = (snapshots: ReturnType<typeof snapshotArticles>) => {
+    snapshots.forEach(([key, data]) => queryClient.setQueryData(key, data));
+  };
   const remove = useMutation({
     mutationFn: deleteArticle,
-    onSuccess: () => {
-      message.success("文章已删除");
-      queryClient.invalidateQueries({ queryKey: ["articles"] });
+    onMutate: async (articleId) => {
+      await queryClient.cancelQueries({ queryKey: ["articles"] });
+      const snapshots = snapshotArticles();
+      queryClient.setQueriesData<ApiList<Article>>(
+        { queryKey: ["articles"] },
+        (data) => removeIdsFromApiList(data, [articleId])
+      );
+      setSelected((current) => (current?.id === articleId ? null : current));
+      setSelectedRowKeys((keys) => keys.filter((key) => String(key) !== articleId));
+      return { snapshots };
     },
+    onSuccess: () => message.success("文章已删除"),
+    onError: (error, _articleId, context) => {
+      if (context) restoreArticles(context.snapshots);
+      message.error(error instanceof Error ? error.message : "删除文章失败");
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["articles"] }),
   });
   const batchRemove = useMutation({
     mutationFn: deleteArticlesBatch,
+    onMutate: async (articleIds) => {
+      await queryClient.cancelQueries({ queryKey: ["articles"] });
+      const snapshots = snapshotArticles();
+      queryClient.setQueriesData<ApiList<Article>>(
+        { queryKey: ["articles"] },
+        (data) => removeIdsFromApiList(data, articleIds)
+      );
+      setSelected((current) =>
+        current && articleIds.includes(current.id) ? null : current
+      );
+      setSelectedRowKeys((keys) =>
+        keys.filter((key) => !articleIds.includes(String(key)))
+      );
+      return { snapshots };
+    },
     onSuccess: (data: any) => {
       message.success(`批量删除完成${data?.deleted_count ? `，成功 ${data.deleted_count} 篇` : ""}`);
-      setSelectedRowKeys([]);
-      queryClient.invalidateQueries({ queryKey: ["articles"] });
     },
-  });
-  const syncArticles = useMutation({
-    mutationFn: (values: { start_page?: number; end_page?: number }) =>
-      syncWechatAccountArticles(wechatAccountId || "", values),
-    onSuccess: (data: any) => {
-      if (data?.run_id) {
-        addArticleCollectionRun({ runId: data.run_id });
-        setActiveCollectionRuns((runs) => {
-          if (runs.some((item) => item.runId === data.run_id)) return runs;
-          return [...runs, { runId: data.run_id }];
-        });
-      }
-      if (data?.status === "skipped") {
-        message.info("当前公众号暂不可采集");
-      } else {
-        message.success(data?.already_running ? "采集任务已在队列中" : "已加入采集队列");
-      }
-      setSyncOpen(false);
-      syncForm.resetFields();
+    onError: (error, _articleIds, context) => {
+      if (context) restoreArticles(context.snapshots);
+      message.error(error instanceof Error ? error.message : "批量删除文章失败");
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : "触发采集失败"),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["articles"] }),
   });
   const cleanAction = useMutation({
     mutationFn: (type: "orphan" | "duplicate" | "expired") => {
@@ -124,10 +155,26 @@ export default function ArticlesPage() {
       if (type === "expired") return cleanExpiredArticles();
       return cleanArticles();
     },
-    onSuccess: (data: any) => {
-      message.success(data?.message || "清理完成");
-      queryClient.invalidateQueries({ queryKey: ["articles"] });
+    onMutate: () => {
+      message.loading({
+        key: articleCleanupMessageKey,
+        content: "正在清理文章…",
+        duration: 0,
+      });
     },
+    onSuccess: (data: any) => {
+      message.success({
+        key: articleCleanupMessageKey,
+        content: data?.message || "清理完成",
+      });
+    },
+    onError: (error) => {
+      message.error({
+        key: articleCleanupMessageKey,
+        content: error instanceof Error ? error.message : "清理文章失败",
+      });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["articles"] }),
   });
   const extractActivity = useMutation({
     mutationFn: extractArticleActivities,
@@ -223,7 +270,7 @@ export default function ArticlesPage() {
       content: "该操作会直接删除匹配文章及关联图片映射，请确认后继续。",
       okText: "确认清理",
       okButtonProps: { danger: true },
-      onOk: () => cleanAction.mutateAsync(type),
+      onOk: () => cleanAction.mutate(type),
     });
   };
 
@@ -235,6 +282,8 @@ export default function ArticlesPage() {
     () => new Set(activeExtractionRuns.map((item) => item.articleId)),
     [activeExtractionRuns]
   );
+  const articleDeletePending =
+    remove.isPending || batchRemove.isPending || cleanAction.isPending;
   const renderExtractionStatus = (value?: string) => {
     const colorMap: Record<string, string> = {
       pending: "default",
@@ -249,6 +298,32 @@ export default function ArticlesPage() {
     return <Tag color={colorMap[status] || "default"}>{status}</Tag>;
   };
 
+  const handleTableChange: TableProps<Article>["onChange"] = (
+    pagination,
+    filters,
+    sorter
+  ) => {
+    const nextSorter = Array.isArray(sorter) ? sorter[0] : sorter;
+    const nextSortBy =
+      nextSorter.order &&
+      (nextSorter.field === "publish_time" ||
+        nextSorter.field === "activity_extraction_status")
+        ? nextSorter.field
+        : "publish_time";
+
+    setPage(pagination.current || 1);
+    setPageSize(pagination.pageSize || 20);
+    setWechatAccountId(
+      String(filters.wechat_account_id?.[0] || "") || undefined
+    );
+    setActivityExtractionStatus(
+      String(filters.activity_extraction_status?.[0] || "") || undefined
+    );
+    setSortBy(nextSortBy);
+    setSortOrder(nextSorter.order === "ascend" ? "asc" : "desc");
+    setSelectedRowKeys([]);
+  };
+
   const columns: ColumnsType<Article> = [
     {
       title: "标题",
@@ -260,7 +335,6 @@ export default function ArticlesPage() {
         </Button>
       ),
     },
-    { title: "公众号", dataIndex: "mp_name", width: 190, ellipsis: true },
     {
       title: "发布时间",
       dataIndex: "publish_time",
@@ -268,10 +342,37 @@ export default function ArticlesPage() {
       render: (value) => formatEpochSeconds(value),
     },
     {
+      title: "公众号",
+      key: "wechat_account_id",
+      dataIndex: "mp_name",
+      width: 190,
+      ellipsis: true,
+      filters: (accountsQuery.data?.list || []).map((account) => ({
+        text: account.name || account.mp_name || account.id,
+        value: account.id,
+      })),
+      filterSearch: true,
+      filterMultiple: false,
+      filteredValue: wechatAccountId ? [wechatAccountId] : null,
+    },
+    {
       title: "活动抽取",
       dataIndex: "activity_extraction_status",
       width: 120,
       render: renderExtractionStatus,
+      filters: FILTERABLE_ACTIVITY_EXTRACTION_STATUSES.map((status) => ({
+        text: status,
+        value: status,
+      })),
+      filterMultiple: false,
+      filteredValue: activityExtractionStatus
+        ? [activityExtractionStatus]
+        : null,
+      sorter: true,
+      sortOrder:
+        sortBy === "activity_extraction_status"
+          ? toAntSortOrder(sortOrder)
+          : null,
     },
     {
       title: "操作",
@@ -294,7 +395,12 @@ export default function ArticlesPage() {
             抽取
           </Button>
           <Popconfirm title="删除这篇文章？" onConfirm={() => remove.mutate(record.id)}>
-            <Button danger type="text" icon={<DeleteOutlined />} />
+            <Button
+              danger
+              type="text"
+              icon={<DeleteOutlined />}
+              disabled={articleDeletePending}
+            />
           </Popconfirm>
         </Space>
       ),
@@ -308,42 +414,9 @@ export default function ArticlesPage() {
         title="文章"
         subtitle="查看已采集的公众号文章，并跟踪活动抽取状态。"
         actions={
-          <>
-            <Select
-              allowClear
-              showSearch
-              placeholder="选择公众号"
-              style={{ minWidth: 220 }}
-              value={wechatAccountId}
-              loading={accountsQuery.isLoading}
-              optionFilterProp="label"
-              onChange={(value) => {
-                setWechatAccountId(value);
-                setPage(1);
-                setSelectedRowKeys([]);
-              }}
-              options={(accountsQuery.data?.list || []).map((account) => ({
-                value: account.id,
-                label: account.name || account.mp_name || account.id,
-              }))}
-            />
-            <Button
-              icon={<SyncOutlined />}
-              disabled={!wechatAccountId}
-              onClick={() => setSyncOpen(true)}
-            >
-              采集文章
-            </Button>
-            <Button icon={<ReloadOutlined />} onClick={() => query.refetch()}>
-              刷新
-            </Button>
-            {activeCollectionRuns.length > 0 && <Tag color="processing">采集中 {activeCollectionRuns.length}</Tag>}
-            <Link to="/wechat-accounts/add">
-              <Button type="primary" icon={<PlusOutlined />}>
-                添加公众号
-              </Button>
-            </Link>
-          </>
+          activeCollectionRuns.length > 0 ? (
+            <Tag color="processing">采集中 {activeCollectionRuns.length}</Tag>
+          ) : undefined
         }
       />
       <Card className="soft-card">
@@ -356,7 +429,7 @@ export default function ArticlesPage() {
             <Button
               danger
               icon={<DeleteOutlined />}
-              disabled={!selectedRowKeys.length}
+              disabled={!selectedRowKeys.length || articleDeletePending}
               loading={batchRemove.isPending}
             >
               批量删除
@@ -365,6 +438,7 @@ export default function ArticlesPage() {
           <Button
             icon={<ClearOutlined />}
             loading={cleanAction.isPending}
+            disabled={articleDeletePending}
             onClick={() => confirmClean("orphan", "清理无效文章？")}
           >
             清理无效
@@ -372,6 +446,7 @@ export default function ArticlesPage() {
           <Button
             icon={<ClearOutlined />}
             loading={cleanAction.isPending}
+            disabled={articleDeletePending}
             onClick={() => confirmClean("duplicate", "清理重复文章？")}
           >
             清理重复
@@ -379,6 +454,7 @@ export default function ArticlesPage() {
           <Button
             icon={<ClearOutlined />}
             loading={cleanAction.isPending}
+            disabled={articleDeletePending}
             onClick={() => confirmClean("expired", "清理 7 天前文章？")}
           >
             清理过期
@@ -390,6 +466,7 @@ export default function ArticlesPage() {
           loading={query.isLoading}
           columns={columns}
           dataSource={rows}
+          onChange={handleTableChange}
           locale={{ emptyText: <EmptyState description="暂无文章" /> }}
           pagination={{
             current: page,
@@ -398,45 +475,9 @@ export default function ArticlesPage() {
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 篇文章`,
             pageSizeOptions: [10, 20, 50, 100],
-            onChange: (nextPage, nextPageSize) => {
-              setPage(nextPage);
-              setPageSize(nextPageSize);
-              setSelectedRowKeys([]);
-            },
           }}
         />
       </Card>
-      <Modal
-        title="采集文章"
-        open={syncOpen}
-        okText="开始采集"
-        cancelText="取消"
-        confirmLoading={syncArticles.isPending}
-        onCancel={() => setSyncOpen(false)}
-        onOk={() => syncForm.submit()}
-      >
-        <Form
-          form={syncForm}
-          layout="vertical"
-          initialValues={{ start_page: 0, end_page: 1 }}
-          onFinish={(values) => syncArticles.mutate(values)}
-        >
-          <Form.Item label="公众号">
-            <Typography.Text>
-              {(accountsQuery.data?.list || []).find((item) => item.id === wechatAccountId)?.name ||
-                (accountsQuery.data?.list || []).find((item) => item.id === wechatAccountId)
-                  ?.mp_name ||
-                wechatAccountId}
-            </Typography.Text>
-          </Form.Item>
-          <Form.Item name="start_page" label="起始页" rules={[{ required: true }]}>
-            <InputNumber min={0} precision={0} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="end_page" label="采集页数" rules={[{ required: true }]}>
-            <InputNumber min={1} precision={0} style={{ width: "100%" }} />
-          </Form.Item>
-        </Form>
-      </Modal>
       <Drawer
         title={selected?.title || "文章详情"}
         width={760}

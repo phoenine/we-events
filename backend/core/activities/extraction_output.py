@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
@@ -157,6 +157,53 @@ def parse_datetime(value: str | None):
         return None
 
 
+def _reference_datetime(
+    value: Any,
+    timezone_name: str = "Asia/Shanghai",
+) -> datetime | None:
+    if value in (None, ""):
+        return None
+    tz = ZoneInfo(timezone_name)
+    try:
+        if isinstance(value, datetime):
+            reference = value
+        elif isinstance(value, (int, float)) or str(value).strip().isdigit():
+            timestamp = float(value)
+            if timestamp > 10_000_000_000:
+                timestamp /= 1000
+            reference = datetime.fromtimestamp(timestamp, tz)
+        else:
+            reference = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if reference.tzinfo is None:
+            reference = reference.replace(tzinfo=timezone.utc)
+        return reference.astimezone(tz)
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+RELATIVE_START_PATTERN = re.compile(r"(?:自|从)?(?:即日起|即日|今日|当天)")
+
+
+def normalize_relative_event_time(
+    event_time_text: str,
+    *,
+    reference_timestamp: Any = None,
+    timezone_name: str = "Asia/Shanghai",
+) -> tuple[str, str | None]:
+    text = str(event_time_text or "").strip()
+    if not text or not RELATIVE_START_PATTERN.search(text):
+        return text, None
+
+    reference = _reference_datetime(reference_timestamp, timezone_name)
+    if reference is None:
+        return text, None
+
+    concrete_date = f"{reference.year}年{reference.month}月{reference.day}日"
+    normalized_text = RELATIVE_START_PATTERN.sub(concrete_date, text, count=1)
+    start_at = reference.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    return normalized_text, start_at
+
+
 def infer_start_at_from_event_text(
     event_time_text: str,
     *,
@@ -174,10 +221,7 @@ def infer_start_at_from_event_text(
         return None
 
     tz = ZoneInfo(timezone_name)
-    if reference_timestamp:
-        reference = datetime.fromtimestamp(reference_timestamp, tz)
-    else:
-        reference = datetime.now(tz)
+    reference = _reference_datetime(reference_timestamp, timezone_name) or datetime.now(tz)
 
     year_text = match.groupdict().get("year")
     year = int(year_text) if year_text else reference.year
@@ -200,27 +244,27 @@ def infer_start_at_from_event_text(
     return candidate.isoformat()
 
 
-def compute_event_status(start_at: str | None, end_at: str | None) -> str:
-    now = datetime.now(timezone.utc)
+def compute_event_status(
+    start_at: str | None,
+    end_at: str | None,
+    *,
+    today: date | None = None,
+    timezone_name: str = "Asia/Shanghai",
+) -> str:
     start = parse_datetime(start_at)
     end = parse_datetime(end_at)
+    local_tz = ZoneInfo(timezone_name)
     if start and start.tzinfo is None:
-        start = start.replace(tzinfo=timezone.utc)
+        start = start.replace(tzinfo=local_tz)
     if end and end.tzinfo is None:
-        end = end.replace(tzinfo=timezone.utc)
+        end = end.replace(tzinfo=local_tz)
 
-    local_tz = ZoneInfo("Asia/Shanghai")
-    local_now = now.astimezone(local_tz)
-    local_start = start.astimezone(local_tz) if start else None
+    current_date = today or datetime.now(local_tz).date()
     local_end = end.astimezone(local_tz) if end else None
 
-    if local_start and local_now < local_start:
-        return "upcoming"
-    if local_end and local_now > local_end:
+    if local_end and local_end.date() <= current_date:
         return "ended"
-    if local_start and not local_end:
-        return "ongoing" if local_now.date() == local_start.date() else "ended"
-    if local_start or local_end:
+    if start or end:
         return "ongoing"
     return "unknown"
 

@@ -10,7 +10,7 @@ from core.activities.extraction_output import ActivityExtractionOutput, parse_ac
 from core.common.log import logger
 
 
-PROMPT_VERSION = "activity_extraction.v1"
+PROMPT_VERSION = "activity_extraction.v2"
 
 MAX_MARKDOWN_CHARS = int(os.getenv("LLM_INPUT_MARKDOWN_CHARS", "60000"))
 MAX_TEXT_CHARS = int(os.getenv("LLM_INPUT_TEXT_CHARS", "20000"))
@@ -101,6 +101,10 @@ def _build_prompt(input_snapshot: dict[str, Any]) -> str:
         '{"is_activity_article": false, "confidence": 0, "reason": "不是活动文章", "activities": []}\n\n'
         "规则：\n"
         "- 一篇文章可能包含多个活动。\n"
+        "- article.publish_date 是文章在 Asia/Shanghai 时区的发布日期。\n"
+        "- 即日起、即日、今日、当天等相对日期必须以 article.publish_date 为基准转换为具体日期，"
+        "start_at/end_at 使用带 +08:00 时区的 ISO 8601 时间，event_time_text 也必须改写为具体日期。\n"
+        "- 相对日期的原文必须保留在 evidence.text 中。\n"
         "- 时间无法规范化时，start_at/end_at 使用 null，但保留 event_time_text。\n"
         "- event_status 不要输出，后端会计算。\n"
         "- 只能使用给定证据，不要编造地点、时间、报名方式。\n\n"
