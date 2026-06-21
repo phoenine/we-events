@@ -1,4 +1,5 @@
 import unittest
+import inspect
 from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
@@ -59,6 +60,49 @@ class ArticleApiTest(unittest.IsolatedAsyncioTestCase):
             )
 
         clean_expired.assert_awaited_once_with(days=7)
+
+    async def test_list_articles_applies_filters_to_rows_and_count(self):
+        list_articles = AsyncMock(return_value=[])
+        count_articles = AsyncMock(return_value=0)
+        filters = {
+            "wechat_account_id": "account-1",
+            "activity_extraction_status": "not_activity",
+        }
+        with (
+            patch.object(
+                article_api.article_repo,
+                "get_articles_base",
+                new=list_articles,
+            ),
+            patch.object(
+                article_api.article_repo,
+                "count_articles_base",
+                new=count_articles,
+            ),
+        ):
+            await article_api.get_articles(
+                wechat_account_id="account-1",
+                activity_extraction_status="not_activity",
+                sort_by="activity_extraction_status",
+                sort_order="asc",
+                offset=20,
+                limit=10,
+                _current_user={"id": "user-1"},
+            )
+
+        list_articles.assert_awaited_once_with(
+            filters=filters,
+            limit=10,
+            offset=20,
+            order_by="activity_extraction_status.asc,publish_time.desc",
+        )
+        count_articles.assert_awaited_once_with(filters=filters)
+
+    def test_list_articles_does_not_expose_publish_time_filters(self):
+        parameters = inspect.signature(article_api.get_articles).parameters
+
+        self.assertNotIn("publish_time_from", parameters)
+        self.assertNotIn("publish_time_to", parameters)
 
 
 if __name__ == "__main__":

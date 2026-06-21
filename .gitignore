@@ -24,6 +24,7 @@ dist/
 .cache/
 .codegraph/
 .superpowers/
+.worktrees/
 docs/
 
 .ipynb_checkpoints/

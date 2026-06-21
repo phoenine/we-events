@@ -167,8 +167,7 @@ async def create_activity(
             payload.source_wechat_account_id or article.get("wechat_account_id")
         )
         data["article_url"] = payload.article_url or article.get("url") or ""
-        if not data.get("event_status"):
-            data["event_status"] = compute_event_status(payload.start_at, payload.end_at)
+        data["event_status"] = compute_event_status(payload.start_at, payload.end_at)
         activity = await activity_repo.create_activity(_drop_none(data))
         return success_response(activity)
     except HTTPException:
@@ -194,16 +193,45 @@ async def list_activities(
     _current_user: dict = Depends(get_current_user),
 ):
     try:
-        activities = await activity_repo.get_activities(
-            article_id=article_id,
-            review_status=review_status,
-            event_status=event_status,
-            source_wechat_account_id=source_wechat_account_id,
-            date_from=date_from,
-            date_to=date_to,
-            limit=limit,
-            offset=offset,
-        )
+        requested_status = event_status if isinstance(event_status, str) else None
+        page_limit = limit if isinstance(limit, int) else 100
+        page_offset = offset if isinstance(offset, int) else 0
+
+        async def fetch_batch(batch_limit: int, batch_offset: int):
+            rows = await activity_repo.get_activities(
+                article_id=article_id,
+                review_status=review_status,
+                event_status=None,
+                source_wechat_account_id=source_wechat_account_id,
+                date_from=date_from,
+                date_to=date_to,
+                limit=batch_limit,
+                offset=batch_offset,
+            )
+            for row in rows:
+                row["event_status"] = compute_event_status(
+                    row.get("start_at"),
+                    row.get("end_at"),
+                )
+            return rows
+
+        if requested_status:
+            matches = []
+            scan_offset = 0
+            scan_limit = 500
+            required_matches = page_offset + page_limit
+            while len(matches) < required_matches:
+                batch = await fetch_batch(scan_limit, scan_offset)
+                matches.extend(
+                    row for row in batch if row["event_status"] == requested_status
+                )
+                if len(batch) < scan_limit:
+                    break
+                scan_offset += len(batch)
+            activities = matches[page_offset:required_matches]
+        else:
+            activities = await fetch_batch(page_limit, page_offset)
+
         return success_response(activities)
     except Exception as exc:
         logger.exception(f"[activities.list] failed: {exc}")
@@ -225,6 +253,10 @@ async def get_activity(
                 status_code=fast_status.HTTP_404_NOT_FOUND,
                 detail=error_response(code=40401, message="活动记录不存在"),
             )
+        activity["event_status"] = compute_event_status(
+            activity.get("start_at"),
+            activity.get("end_at"),
+        )
         return success_response(activity)
     except HTTPException:
         raise
@@ -251,11 +283,11 @@ async def patch_activity(
             )
 
         data = _drop_none(payload.model_dump(mode="json"))
-        if "start_at" in data or "end_at" in data:
-            data["event_status"] = compute_event_status(
-                data.get("start_at", activity.get("start_at")),
-                data.get("end_at", activity.get("end_at")),
-            )
+        data.pop("event_status", None)
+        data["event_status"] = compute_event_status(
+            data.get("start_at", activity.get("start_at")),
+            data.get("end_at", activity.get("end_at")),
+        )
         updated = await activity_repo.update_activity(activity_id, data)
         return success_response(updated[0] if updated else activity)
     except HTTPException:

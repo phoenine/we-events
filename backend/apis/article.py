@@ -6,6 +6,13 @@ from core.articles import article_repo
 from core.wechat_accounts import wechat_account_repo
 from core.articles.storage_cleanup import delete_article_storage_objects
 from core.articles.quality_service import reclassify_article_content_statuses
+from core.articles.query import (
+    ActivityExtractionStatus,
+    ArticleSortField,
+    SortOrder,
+    build_article_filters,
+    build_article_order,
+)
 from core.common.log import logger
 from schemas import success_response, error_response, format_search_kw
 from typing import Optional, List, Dict, Any, cast
@@ -37,23 +44,29 @@ async def _safe_delete_article_image_mappings(article_ids: List[str]) -> None:
 @router.get("", summary="获取文章列表")
 async def get_articles(
     wechat_account_id: Optional[str] = Query(None),
+    activity_extraction_status: Optional[ActivityExtractionStatus] = Query(None),
+    sort_by: ArticleSortField = Query("publish_time"),
+    sort_order: SortOrder = Query("desc"),
     offset: int = Query(0, ge=0),
     limit: int = Query(5, ge=1, le=100),
     _current_user: dict = Depends(get_current_user),
 ):
     try:
-        articles_raw = await article_repo.get_articles(
-            wechat_account_id=wechat_account_id,
+        filters = build_article_filters(
+            wechat_account_id,
+            activity_extraction_status,
+        )
+        order_by = build_article_order(sort_by, sort_order)
+        articles_raw = await article_repo.get_articles_base(
+            filters=filters,
             limit=limit,
             offset=offset,
-            order_by="publish_time.desc",
+            order_by=order_by,
         )
         # 显式标注类型，便于静态类型检查
         articles: List[Dict[str, Any]] = cast(List[Dict[str, Any]], articles_raw)
 
-        total = await article_repo.count_articles(
-            wechat_account_id=wechat_account_id,
-        )
+        total = await article_repo.count_articles_base(filters=filters)
 
         # 获取相关公众号账号信息
         wechat_account_ids = {article.get("wechat_account_id") for article in articles}
