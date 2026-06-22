@@ -1,3 +1,4 @@
+import asyncio
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -96,7 +97,11 @@ async def update_user_info(
                 if email:
                     update_data["email"] = email
                 if update_data:
-                    service_client.auth.admin.update_user_by_id(user_id, update_data)
+                    await asyncio.to_thread(
+                        service_client.auth.admin.update_user_by_id,
+                        user_id,
+                        update_data,
+                    )
             except Exception as sync_err:
                 logger.warning(f"用户资料已更新，但 Auth 字段同步失败: {sync_err}")
 
@@ -135,7 +140,8 @@ async def change_password(
 
         # 使用 service role 直接更新密码
         service_client = auth_manager.get_client(use_service=True)
-        service_client.auth.admin.update_user_by_id(
+        await asyncio.to_thread(
+            service_client.auth.admin.update_user_by_id,
             str(user_id),
             {"password": payload.new_password},
         )

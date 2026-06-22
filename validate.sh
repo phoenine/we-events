@@ -148,10 +148,21 @@ fi
 echo ""
 echo "Checking Python compilation"
 
-if python -m compileall -q backend/apis backend/core backend/driver backend/jobs backend/schemas backend/init_sys.py backend/web.py; then
+PYTHON_BIN=""
+if [ -x "backend/.venv/bin/python" ]; then
+  PYTHON_BIN="backend/.venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python)"
+else
+  fail "no Python interpreter found"
+fi
+
+if [ -n "$PYTHON_BIN" ] && "$PYTHON_BIN" -m compileall -q backend/apis backend/core backend/driver backend/jobs backend/schemas backend/init_sys.py backend/web.py; then
   ok "backend Python compilation passed"
 else
-  fail "backend Python compilation failed"
+  [ -n "$PYTHON_BIN" ] && fail "backend Python compilation failed"
 fi
 
 echo ""

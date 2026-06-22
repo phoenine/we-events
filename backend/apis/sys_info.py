@@ -3,7 +3,7 @@ import time
 import sys
 from fastapi import APIRouter, Depends, HTTPException, status
 from schemas import success_response, error_response, API_VERSION
-from core.integrations.supabase.auth import get_current_user
+from core.integrations.supabase.auth import get_current_admin_user
 from core.common.app_settings import settings
 from core.common.base import VERSION as CORE_VERSION, LATEST_VERSION
 from core.common.resource import get_system_resources
@@ -12,7 +12,6 @@ from core.articles import article_collection_repo
 from core.activities import activity_run_repo
 from driver.wx.service import (
     get_state as wx_get_state,
-    get_session_info as wx_get_session_info,
 )
 from driver.wx.state import LoginState
 from driver.session.manager import SessionManager
@@ -128,7 +127,7 @@ async def get_base_info():
 
 @router.get("/resources", summary="获取系统资源使用情况")
 async def system_resources(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_admin_user),
 ):
     """获取系统资源使用情况
 
@@ -151,7 +150,7 @@ async def system_resources(
 
 @router.get("/info", summary="获取系统信息")
 async def get_system_info(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_admin_user),
 ):
     """获取当前系统的各种信息
 
@@ -166,8 +165,6 @@ async def get_system_info(
         state_env = wx_get_state()
         state_data = state_env.get("data") if isinstance(state_env, dict) else {}
         wx_state = str((state_data or {}).get("state") or LoginState.IDLE.value)
-        session_env = wx_get_session_info()
-        session_data = session_env.get("data") if isinstance(session_env, dict) else {}
         system_info = {
             "os": {
                 "name": platform.system(),
@@ -188,7 +185,6 @@ async def get_system_info(
             "wx": {
                 "login": wx_state == LoginState.SUCCESS.value,
                 "auth": _build_wx_auth_status_from_state(state_env),
-                "session": session_data.get("session") if isinstance(session_data, dict) else None,
             },
             "article": laxArticle(),
             "queues": await _build_queue_status(),
