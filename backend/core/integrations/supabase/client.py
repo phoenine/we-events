@@ -1,3 +1,4 @@
+import asyncio
 import os
 from typing import Optional, Dict, List, Union, Any, cast
 from supabase import create_client, Client, ClientOptions
@@ -120,7 +121,7 @@ class SupabaseClient:
             if offset:
                 query = query.offset(offset)
 
-            response = query.execute()
+            response = await asyncio.to_thread(query.execute)
             return response.data if response.data else []
 
         except Exception as e:
@@ -155,7 +156,7 @@ class SupabaseClient:
                     else:
                         query = query.eq(key, value)
 
-            response = query.execute()
+            response = await asyncio.to_thread(query.execute)
             data = response.data or []
             return response.count if hasattr(response, "count") else len(data)
 
@@ -166,7 +167,8 @@ class SupabaseClient:
     async def insert(self, table: str, data: Dict):
         """插入数据"""
         try:
-            response = self.from_table(table).insert(data).execute()
+            query = self.from_table(table).insert(data)
+            response = await asyncio.to_thread(query.execute)
             return response.data[0] if response.data else {}
         except Exception as e:
             logger.error(f"插入数据到表 {table} 失败: {e}")
@@ -181,7 +183,7 @@ class SupabaseClient:
             for key, value in filters.items():
                 query = query.eq(key, value)
 
-            response = query.execute()
+            response = await asyncio.to_thread(query.execute)
             return response.data if response.data else []
 
         except Exception as e:
@@ -217,7 +219,7 @@ class SupabaseClient:
                 else:
                     query = query.eq(key, value)
 
-            response = query.execute()
+            response = await asyncio.to_thread(query.execute)
             return response.data if response.data else []
 
         except Exception as e:
@@ -240,7 +242,7 @@ class SupabaseClient:
             else:
                 query = self.from_table(table).upsert(data)
 
-            response = query.execute()
+            response = await asyncio.to_thread(query.execute)
             rows = response.data or []
             return rows
 
@@ -251,7 +253,8 @@ class SupabaseClient:
     async def rpc(self, function_name: str, params: Optional[Dict[str, Any]] = None):
         """调用 Postgres RPC 函数。"""
         try:
-            response = self.get_client().rpc(function_name, params or {}).execute()
+            query = self.get_client().rpc(function_name, params or {})
+            response = await asyncio.to_thread(query.execute)
             return response.data if response.data else []
         except Exception as e:
             logger.error(f"调用RPC {function_name} 失败: {e}")

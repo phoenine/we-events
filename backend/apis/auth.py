@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from schemas import success_response, error_response
 from core.common.log import logger
 from core.integrations.supabase.auth import (
+    get_current_admin_user,
     get_current_user,
     authenticate_user_credentials,
     UserCredentials,
@@ -41,7 +42,7 @@ async def _issue_token(form_data: OAuth2PasswordRequestForm):
 
 
 @router.get("/qr/code", summary="获取登录二维码")
-async def get_qrcode(_current_user=Depends(get_current_user)):
+async def get_qrcode(_current_user=Depends(get_current_admin_user)):
     session_id = None
     if auth_session_store.valid_session_db():
         user_id = _current_user.get("id") or None
@@ -61,14 +62,14 @@ async def get_qrcode(_current_user=Depends(get_current_user)):
 
 
 @router.get("/qr/image", summary="获取登录二维码图片")
-async def qr_image(_current_user=Depends(get_current_user)):
+async def qr_image(_current_user=Depends(get_current_admin_user)):
     state_env = wx_get_state()
     state = state_env.get("data") or {}
     return success_response(state.get("has_code"))
 
 
 @router.get("/qr/url", summary="获取二维码完整访问地址")
-async def qr_url(_current_user=Depends(get_current_user)):
+async def qr_url(_current_user=Depends(get_current_admin_user)):
     sb = SupabaseStorage()
     state_env = wx_get_state()
     state = state_env.get("data") or {}
@@ -95,7 +96,7 @@ async def qr_url(_current_user=Depends(get_current_user)):
 
 
 @router.get("/qr/status", summary="获取扫描状态")
-async def qr_status(_current_user=Depends(get_current_user)):
+async def qr_status(_current_user=Depends(get_current_admin_user)):
     state_env = wx_get_state()
     state = state_env.get("data") or {}
     return success_response(
@@ -106,7 +107,7 @@ async def qr_status(_current_user=Depends(get_current_user)):
 
 
 @router.get("/qr/over", summary="扫码完成")
-async def qr_success(_current_user=Depends(get_current_user)):
+async def qr_success(_current_user=Depends(get_current_admin_user)):
     return success_response(wx_logout(clear_persisted=False))
 
 

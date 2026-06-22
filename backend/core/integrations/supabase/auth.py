@@ -1,3 +1,4 @@
+import asyncio
 import os
 from typing import Optional, Dict, Any
 import httpx
@@ -98,7 +99,8 @@ class SupabaseAuthManager:
                 metadata["username"] = email.split("@")[0]
 
             # 注册用户（依赖 Supabase Auth）
-            auth_response = client.auth.sign_up(
+            auth_response = await asyncio.to_thread(
+                client.auth.sign_up,
                 {
                     "email": email,
                     "password": password,
@@ -136,8 +138,9 @@ class SupabaseAuthManager:
             client = self.get_client()
 
             # 用户登录
-            auth_response = client.auth.sign_in_with_password(
-                {"email": email, "password": password}
+            auth_response = await asyncio.to_thread(
+                client.auth.sign_in_with_password,
+                {"email": email, "password": password},
             )
 
             if auth_response.user and auth_response.session:
@@ -180,8 +183,8 @@ class SupabaseAuthManager:
                     )
                 if resp.status_code != 200:
                     logger.warning(f"auth verify attempt {attempt+1}/{MAX_RETRIES} status={resp.status_code}")
-                    if attempt < MAX_RETRIES - 1:
-                        import asyncio
+                    retryable = resp.status_code == 429 or resp.status_code >= 500
+                    if retryable and attempt < MAX_RETRIES - 1:
                         await asyncio.sleep(0.5 * (attempt + 1))
                         continue
                     return None
@@ -192,8 +195,10 @@ class SupabaseAuthManager:
                 profile = {}
                 try:
                     svc = self.get_client(use_service=True)
-                    rows = (svc.table("profiles").select("username,nickname,role,status")
-                            .eq("user_id", str(user_data["id"])).limit(1).execute()).data
+                    query = (svc.table("profiles").select("username,nickname,role,status")
+                             .eq("user_id", str(user_data["id"])).limit(1))
+                    response = await asyncio.to_thread(query.execute)
+                    rows = response.data
                     profile = rows[0] if rows else {}
                 except Exception as ex:
                     logger.warning(f"profile read failed: {ex}")
@@ -213,7 +218,6 @@ class SupabaseAuthManager:
             except Exception as e:
                 logger.warning(f"auth verify exception attempt {attempt+1}: {e}")
                 if attempt < MAX_RETRIES - 1:
-                    import asyncio
                     await asyncio.sleep(1.0 * (attempt + 1))
                     continue
                 return None
@@ -225,7 +229,10 @@ class SupabaseAuthManager:
             client = self.get_client()
 
             # 刷新 token（具体调用根据 Supabase Python SDK 版本可能略有不同）
-            auth_response = client.auth.refresh_session(refresh_token)
+            auth_response = await asyncio.to_thread(
+                client.auth.refresh_session,
+                refresh_token,
+            )
 
             if auth_response.session:
                 return {
