@@ -107,7 +107,7 @@ docker compose --env-file .env.online up --build
 python main.py -init True
 ```
 
-当前阶段公众号采集由 API 显式入队，FastAPI worker 消费任务，不再启动旧定时类后台任务。
+公众号采集由 API 或公众号分组的每日定时计划入队，FastAPI worker 消费任务。定时计划只负责入队，不直接执行采集。
 
 ## 6. API 文档
 
@@ -134,8 +134,9 @@ python main.py -init True
 
 - 日志统一走 `core.common.log`（Loguru）
 - 公众号文章采集使用 Supabase 表驱动队列：`article_collection_runs` / `article_collection_items`
+- 公众号文章采集依赖单一微信登录态，后端强制 Uvicorn workers=1，文章采集 worker 固定为单消费者，不提供并发采集配置
 - 活动抽取使用 Supabase 表驱动队列：`activity_extraction_runs`
-- 当前阶段不保留 cron 定时任务；任务由 API 显式入队，FastAPI worker 消费
+- 公众号分组可配置每日固定时间的采集计划；错过执行时间不补偿，OCR 仍按需手动触发
 
 ## 9. 常见开发命令
 

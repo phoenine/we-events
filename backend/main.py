@@ -29,6 +29,12 @@ if __name__ == "__main__":
     logger.info("启动服务器")
     auto_reload = settings.auto_reload
     workers = settings.threads
+    if workers > 1:
+        # Article collection uses a shared WeChat MP session. Multiple Uvicorn
+        # worker processes would each start their own queue consumer and race on
+        # the same persisted cookies, causing false "not logged in" failures.
+        logger.warning("公众号采集依赖单一微信登录态，Uvicorn workers 已强制设为 1")
+        workers = 1
     if auto_reload and workers > 1:
         logger.warning("AUTO_RELOAD=True 时 workers 必须为 1，已自动降为 1")
         workers = 1

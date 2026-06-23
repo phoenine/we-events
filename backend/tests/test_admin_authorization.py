@@ -7,6 +7,7 @@ from apis import activities as activities_api
 from apis import auth as auth_api
 from apis import config_management as config_api
 from apis import sys_info as sys_info_api
+from apis import wechat_account_groups as groups_api
 from core.integrations.supabase.auth import get_current_admin_user
 
 
@@ -65,6 +66,13 @@ class AdminAuthorizationTest(unittest.IsolatedAsyncioTestCase):
                     "current_user"
                 ].default
                 self.assertIs(dependency.dependency, get_current_admin_user)
+
+    def test_group_schedule_mutation_requires_admin_dependency(self):
+        dependency = inspect.signature(
+            groups_api.update_wechat_account_group_schedule
+        ).parameters["_current_user"].default
+
+        self.assertIs(dependency.dependency, get_current_admin_user)
 
     def test_system_info_does_not_read_raw_wechat_session(self):
         source = inspect.getsource(sys_info_api.get_system_info)

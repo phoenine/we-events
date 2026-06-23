@@ -22,6 +22,15 @@ class ArticleCollectionRepository:
         rows = await self.client.select(self.RUN_TABLE, filters={"id": run_id}, limit=1)
         return rows[0] if rows else None
 
+    async def get_runs_by_ids(self, run_ids: list[str]):
+        if not run_ids:
+            return []
+        return await self.client.select(
+            self.RUN_TABLE,
+            filters={"id": {"in": run_ids}},
+            order="created_at.desc",
+        )
+
     async def count_runs(self, status: str | None = None):
         filters = {"status": status} if status else None
         return await self.client.count(self.RUN_TABLE, filters=filters)

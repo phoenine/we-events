@@ -1,6 +1,8 @@
 import unittest
+from unittest.mock import patch
 
 from core.integrations.wx import base
+from core.wechat_accounts.hooks import build_wx_gather_hooks
 
 
 class WechatSessionErrorTest(unittest.TestCase):
@@ -23,6 +25,17 @@ class WechatSessionErrorTest(unittest.TestCase):
             gather.Error("session expired", code="Invalid Session")
 
         self.assertEqual(calls[0][1], "Invalid Session")
+
+    def test_default_hook_only_clears_session_for_invalid_session(self):
+        hooks = build_wx_gather_hooks()
+
+        with patch("driver.wx.service.clear_session") as clear_session:
+            hooks.on_error("请先扫码登录公众号平台", None, {})
+            hooks.on_error("frequencey control", None, {})
+            clear_session.assert_not_called()
+
+            hooks.on_error("session expired", "Invalid Session", {})
+            clear_session.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -2,10 +2,16 @@ import json
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from datetime import datetime, timezone
 from core.wechat_account_groups import wechat_account_group_repo
+from core.articles import article_collection_repo
 from core.articles.collection_service import enqueue_group_collection
-from core.integrations.supabase.auth import get_current_user
+from core.integrations.supabase.auth import get_current_admin_user, get_current_user
 from core.common.log import logger
-from schemas import success_response, error_response, WeChatAccountGroupCreate
+from schemas import (
+    success_response,
+    error_response,
+    WeChatAccountGroupCreate,
+    WeChatAccountGroupScheduleUpdate,
+)
 
 router = APIRouter(prefix="/wechat-account-groups", tags=["公众号分组管理"])
 
@@ -69,6 +75,26 @@ async def list_wechat_account_groups(
                 else []
             )
             items.append(_to_api_group(group, account_ids))
+        run_ids = sorted(
+            {
+                str(item.get("last_collection_run_id"))
+                for item in items
+                if item.get("last_collection_run_id")
+            }
+        )
+        runs = await article_collection_repo.get_runs_by_ids(run_ids)
+        runs_by_id = {str(run.get("id")): run for run in runs if run.get("id")}
+        for item in items:
+            run = runs_by_id.get(str(item.get("last_collection_run_id") or ""))
+            if run:
+                item["last_collection_run"] = {
+                    "id": run.get("id"),
+                    "status": run.get("status"),
+                    "articles_count": run.get("articles_count", 0),
+                    "error": run.get("error", ""),
+                    "created_at": run.get("created_at"),
+                    "finished_at": run.get("finished_at"),
+                }
         return success_response(
             data={
                 "list": items,
@@ -207,6 +233,37 @@ async def update_wechat_account_group(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=500, message=str(e)),
         )
+
+
+@router.put("/{group_id}/schedule", summary="更新公众号分组定时采集设置")
+async def update_wechat_account_group_schedule(
+    group_id: str,
+    payload: WeChatAccountGroupScheduleUpdate,
+    _current_user: dict = Depends(get_current_admin_user),
+):
+    existing_group = await wechat_account_group_repo.get_group_by_id(group_id)
+    if not existing_group:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code=404, message="公众号分组不存在"),
+        )
+    schedule_time = payload.time.strftime("%H:%M:%S") if payload.time else None
+    updated = await wechat_account_group_repo.update_group_schedule(
+        group_id,
+        schedule_enabled=payload.enabled,
+        schedule_time=schedule_time,
+        collection_pages=payload.collection_pages,
+    )
+    data = updated[0] if updated else {
+        **existing_group,
+        "schedule_enabled": payload.enabled,
+        "schedule_time": schedule_time,
+        "collection_pages": payload.collection_pages,
+    }
+    account_ids = await wechat_account_group_repo.get_wechat_account_ids_by_group(
+        group_id
+    )
+    return success_response(data=_to_api_group(data, account_ids))
 
 
 @router.delete(
