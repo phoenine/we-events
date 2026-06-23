@@ -27,6 +27,35 @@ export interface WechatAccountGroup {
   status?: number;
   wechat_account_ids?: string[] | string;
   wechat_account_count?: number;
+  schedule_enabled?: boolean;
+  schedule_time?: string | null;
+  collection_pages?: number;
+  last_scheduled_date?: string | null;
+  last_scheduled_at?: string | null;
+  last_collection_run_id?: string | null;
+  last_schedule_error?: string;
+  last_collection_run?: ArticleCollectionRunSummary | null;
+}
+
+export interface ArticleCollectionRunSummary {
+  id: string;
+  status:
+    | "queued"
+    | "processing"
+    | "success"
+    | "partial_success"
+    | "failed"
+    | "canceled";
+  articles_count?: number;
+  error?: string;
+  created_at?: string;
+  finished_at?: string;
+}
+
+export interface WechatAccountGroupScheduleUpdate {
+  enabled: boolean;
+  time?: string | null;
+  collection_pages: number;
 }
 
 export interface Article {

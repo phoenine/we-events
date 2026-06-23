@@ -1,5 +1,9 @@
 import http from "@/api/http";
-import type { ApiList, WechatAccountGroup } from "@/types/api";
+import type {
+  ApiList,
+  WechatAccountGroup,
+  WechatAccountGroupScheduleUpdate,
+} from "@/types/api";
 
 function normalizeGroupPayload(payload: Partial<WechatAccountGroup>) {
   const wechatAccountIds = payload.wechat_account_ids;
@@ -44,4 +48,11 @@ export function syncWechatAccountGroupArticles(
   payload: { start_page?: number; end_page?: number } = {}
 ) {
   return http.post(`/wx/wechat-account-groups/${id}/sync`, payload);
+}
+
+export function updateWechatAccountGroupSchedule(
+  id: string,
+  payload: WechatAccountGroupScheduleUpdate
+) {
+  return http.put(`/wx/wechat-account-groups/${id}/schedule`, payload);
 }

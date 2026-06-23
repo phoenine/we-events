@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
 
@@ -83,6 +83,39 @@ class WeChatAccountGroupRepository:
         """更新公众号分组"""
         return await self.client.update(
             self.GROUP_TABLE, group_data, filters={"id": group_id}
+        )
+
+    async def update_group_schedule(
+        self,
+        group_id: str,
+        *,
+        schedule_enabled: bool,
+        schedule_time: str | None,
+        collection_pages: int,
+    ):
+        return await self.client.update(
+            self.GROUP_TABLE,
+            {
+                "schedule_enabled": schedule_enabled,
+                "schedule_time": schedule_time,
+                "collection_pages": collection_pages,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            filters={"id": group_id},
+        )
+
+    async def get_enabled_schedules(self):
+        return await self.client.select(
+            self.GROUP_TABLE,
+            filters={"schedule_enabled": True, "status": 1},
+            order="id.asc",
+        )
+
+    async def mark_schedule_attempt(
+        self, group_id: str, payload: dict[str, Any]
+    ):
+        return await self.client.update(
+            self.GROUP_TABLE, payload, filters={"id": group_id}
         )
 
     async def delete_group(self, group_id: str):

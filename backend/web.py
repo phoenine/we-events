@@ -23,6 +23,10 @@ from core.activities.service import (
     start_activity_extraction_workers,
     stop_activity_extraction_workers,
 )
+from core.wechat_account_groups.scheduler import (
+    start_group_collection_scheduler,
+    stop_group_collection_scheduler,
+)
 
 configure_logger(level=settings.log_level, log_file=settings.log_file)
 
@@ -31,9 +35,11 @@ configure_logger(level=settings.log_level, log_file=settings.log_file)
 async def lifespan(app: FastAPI):
     await start_article_collection_workers()
     await start_activity_extraction_workers()
+    await start_group_collection_scheduler()
     try:
         yield
     finally:
+        await stop_group_collection_scheduler()
         await stop_activity_extraction_workers()
         await stop_article_collection_workers()
 

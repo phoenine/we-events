@@ -10,10 +10,8 @@ def build_wx_gather_hooks() -> WxGatherHooks:
         """更新公众号同步状态/时间（DB 副作用）。"""
         try:
             from datetime import datetime, timezone
-            import time
             from core.wechat_accounts import wechat_account_repo
 
-            current_time = int(time.time())
             update_data = {
                 "last_fetch": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat(),

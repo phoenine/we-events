@@ -1,7 +1,8 @@
 import { DeleteOutlined, PlusOutlined, SyncOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag } from "antd";
+import { App, Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, TimePicker, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 import {
   createWechatAccountGroup,
@@ -9,16 +10,24 @@ import {
   listWechatAccountGroups,
   syncWechatAccountGroupArticles,
   updateWechatAccountGroup,
+  updateWechatAccountGroupSchedule,
 } from "@/api/wechatAccountGroups";
 import { getArticleCollectionRun, listWechatAccounts } from "@/api/wechatAccounts";
 import EmptyState from "@/components/common/EmptyState";
 import PageHeader from "@/components/common/PageHeader";
+import { useAuthStore } from "@/store/authStore";
 import type { ApiList, WechatAccount, WechatAccountGroup } from "@/types/api";
 import {
   addArticleCollectionRun,
   loadArticleCollectionRuns,
   removeArticleCollectionRuns,
 } from "@/utils/articleCollectionRuns";
+import {
+  formatGroupCollectionSchedule,
+  groupCollectionRunColor,
+  groupCollectionRunLabel,
+  hasGroupCollectionResult,
+} from "@/utils/groupCollectionSchedule";
 
 function normalize(data: ApiList<WechatAccountGroup> | WechatAccountGroup[] | undefined) {
   if (!data) return [];
@@ -39,12 +48,19 @@ function parseGroupAccountIds(value: WechatAccountGroup["wechat_account_ids"]) {
 export default function WechatAccountGroupsPage() {
   const [editing, setEditing] = useState<WechatAccountGroup | null>(null);
   const [syncing, setSyncing] = useState<WechatAccountGroup | null>(null);
+  const [scheduling, setScheduling] = useState<WechatAccountGroup | null>(null);
   const [activeCollectionRuns, setActiveCollectionRuns] = useState(loadArticleCollectionRuns);
   const [form] = Form.useForm();
   const [syncForm] = Form.useForm();
+  const [scheduleForm] = Form.useForm();
   const queryClient = useQueryClient();
+  const currentUser = useAuthStore((state) => state.user);
   const { message } = App.useApp();
-  const query = useQuery({ queryKey: ["wechat-account-groups"], queryFn: () => listWechatAccountGroups() });
+  const query = useQuery({
+    queryKey: ["wechat-account-groups"],
+    queryFn: () => listWechatAccountGroups(),
+    refetchInterval: 30_000,
+  });
   const accountsQuery = useQuery({
     queryKey: ["wechat-accounts", "group-options"],
     queryFn: () => listWechatAccounts({ offset: 0, limit: 100 }),
@@ -84,6 +100,22 @@ export default function WechatAccountGroupsPage() {
       syncForm.resetFields();
     },
     onError: (error) => message.error(error instanceof Error ? error.message : "分组采集失败"),
+  });
+  const saveSchedule = useMutation({
+    mutationFn: (values: { enabled: boolean; time?: dayjs.Dayjs | null; collection_pages: number }) =>
+      updateWechatAccountGroupSchedule(String(scheduling?.id || ""), {
+        enabled: values.enabled,
+        time: values.time ? values.time.format("HH:mm") : null,
+        collection_pages: values.collection_pages,
+      }),
+    onSuccess: () => {
+      message.success("定时采集设置已保存");
+      setScheduling(null);
+      scheduleForm.resetFields();
+      queryClient.invalidateQueries({ queryKey: ["wechat-account-groups"] });
+    },
+    onError: (error) =>
+      message.error(error instanceof Error ? error.message : "定时采集设置保存失败"),
   });
   useEffect(() => {
     if (!activeCollectionRuns.length) return;
@@ -154,13 +186,66 @@ export default function WechatAccountGroupsPage() {
       render: (value) => <Tag color={value === 0 ? "default" : "success"}>{value === 0 ? "停用" : "启用"}</Tag>,
     },
     {
+      title: "定时采集",
+      width: 150,
+      render: (_, record) => {
+        return <span>{formatGroupCollectionSchedule(record)}</span>;
+      },
+    },
+    {
+      title: "采集结果",
+      width: 190,
+      render: (_, record) => {
+        if (!hasGroupCollectionResult(record)) return "-";
+        const runLabel = groupCollectionRunLabel(
+          record.last_collection_run,
+          record.last_schedule_error
+        );
+        const lastTime = record.last_scheduled_at
+          ? dayjs(record.last_scheduled_at).format("YYYY-MM-DD HH:mm")
+          : "";
+        return (
+          <Tooltip title={record.last_schedule_error || record.last_collection_run?.error}>
+            <Space size={4}>
+              <Tag
+                color={groupCollectionRunColor(
+                  record.last_collection_run,
+                  record.last_schedule_error
+                )}
+              >
+                {runLabel}
+              </Tag>
+              {lastTime && <Typography.Text type="secondary">{lastTime}</Typography.Text>}
+            </Space>
+          </Tooltip>
+        );
+      },
+    },
+    {
       title: "操作",
-      width: 230,
+      width: 300,
       render: (_, record) => (
         <Space>
           <Button type="text" icon={<SyncOutlined />} onClick={() => setSyncing(record)}>
             采集
           </Button>
+          {currentUser?.role === "admin" && (
+            <Button
+              type="text"
+              onClick={() => {
+                setScheduling(record);
+                scheduleForm.setFieldsValue({
+                  enabled: Boolean(record.schedule_enabled),
+                  time: record.schedule_time
+                    ? dayjs(`2000-01-01T${record.schedule_time}`)
+                    : null,
+                  collection_pages: record.collection_pages || 1,
+                });
+              }}
+            >
+              定时设置
+            </Button>
+          )}
           <Button
             type="link"
             onClick={() => {
@@ -262,6 +347,52 @@ export default function WechatAccountGroupsPage() {
           </Form.Item>
           <Form.Item name="end_page" label="采集页数" rules={[{ required: true }]}>
             <InputNumber min={1} precision={0} style={{ width: "100%" }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+      <Modal
+        title={`定时采集：${scheduling?.name || ""}`}
+        open={!!scheduling}
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={saveSchedule.isPending}
+        onCancel={() => {
+          setScheduling(null);
+          scheduleForm.resetFields();
+        }}
+        onOk={() => scheduleForm.submit()}
+      >
+        <Form
+          form={scheduleForm}
+          layout="vertical"
+          initialValues={{ enabled: false, collection_pages: 1 }}
+          onFinish={(values) => saveSchedule.mutate(values)}
+        >
+          <Form.Item name="enabled" label="启用定时采集" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, next) => prev.enabled !== next.enabled}>
+            {({ getFieldValue }) => (
+              <Form.Item
+                name="time"
+                label="每日执行时间"
+                rules={[
+                  {
+                    required: Boolean(getFieldValue("enabled")),
+                    message: "请选择执行时间",
+                  },
+                ]}
+              >
+                <TimePicker format="HH:mm" style={{ width: "100%" }} />
+              </Form.Item>
+            )}
+          </Form.Item>
+          <Form.Item
+            name="collection_pages"
+            label="采集页数"
+            rules={[{ required: true, message: "请输入采集页数" }]}
+          >
+            <InputNumber min={1} max={5} precision={0} style={{ width: "100%" }} />
           </Form.Item>
         </Form>
       </Modal>

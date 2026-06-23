@@ -22,7 +22,6 @@ WORKER_ENABLED = os.getenv("ARTICLE_COLLECTION_WORKER_ENABLED", "true").lower() 
     "false",
     "no",
 }
-WORKER_CONCURRENCY = max(1, int(os.getenv("ARTICLE_COLLECTION_CONCURRENCY", "1")))
 WORKER_POLL_INTERVAL_SECONDS = max(
     1.0,
     float(os.getenv("ARTICLE_COLLECTION_POLL_INTERVAL_SECONDS", "3")),
@@ -542,14 +541,13 @@ async def start_article_collection_workers() -> None:
 
     _worker_stop_event = asyncio.Event()
     base_id = f"{socket.gethostname()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
-    for index in range(WORKER_CONCURRENCY):
-        worker_id = f"{base_id}-{index + 1}"
-        _worker_tasks.append(
-            asyncio.create_task(
-                _article_collection_worker_loop(worker_id, _worker_stop_event),
-                name=f"article-collection-worker-{index + 1}",
-            )
+    worker_id = f"{base_id}-1"
+    _worker_tasks.append(
+        asyncio.create_task(
+            _article_collection_worker_loop(worker_id, _worker_stop_event),
+            name="article-collection-worker-1",
         )
+    )
     logger.info(
         f"[article-collection.worker] started workers count={len(_worker_tasks)} "
         f"poll_interval={WORKER_POLL_INTERVAL_SECONDS}s"

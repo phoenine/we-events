@@ -30,8 +30,17 @@ create table if not exists public.wechat_account_groups (
   description text,
   cover text,
   status integer not null default 1,
+  schedule_enabled boolean not null default false,
+  schedule_time time,
+  collection_pages integer not null default 1
+    check (collection_pages between 1 and 5),
+  last_scheduled_date date,
+  last_scheduled_at timestamptz,
+  last_collection_run_id uuid,
+  last_schedule_error text not null default '',
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  check (not schedule_enabled or schedule_time is not null)
 );
 
 -- WeChat official account subscription sources.
@@ -79,6 +88,13 @@ create table if not exists public.article_images (
   public_url text not null default '',
   origin_url text not null default '',
   position integer not null default 1,
+  ocr_status text not null default 'pending'
+    check (ocr_status in ('pending', 'completed', 'failed')),
+  ocr_text text not null default '',
+  ocr_confidence double precision,
+  ocr_provider text not null default '',
+  ocr_error text not null default '',
+  ocr_finished_at timestamptz,
   created_at timestamptz not null default now(),
   unique (article_id, object_path)
 );
@@ -105,6 +121,12 @@ create table if not exists public.article_collection_runs (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.wechat_account_groups
+  add constraint wechat_account_groups_last_collection_run_id_fkey
+  foreign key (last_collection_run_id)
+  references public.article_collection_runs(id)
+  on delete set null;
 
 create table if not exists public.article_collection_items (
   id uuid primary key default gen_random_uuid(),
@@ -362,6 +384,7 @@ create index if not exists idx_wechat_auth_sessions_updated on public.wechat_aut
 create index if not exists idx_article_images_article_id on public.article_images(article_id);
 create index if not exists idx_article_images_object_path on public.article_images(object_path);
 create index if not exists idx_article_images_article_position on public.article_images(article_id, position);
+create index if not exists idx_article_images_ocr_status on public.article_images(ocr_status);
 
 -- updated_at triggers.
 drop trigger if exists trg_profiles_updated on public.profiles;
