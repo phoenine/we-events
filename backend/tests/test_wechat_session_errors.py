@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch
 
+import requests
+
 from core.integrations.wx import base
 from core.wechat_accounts.hooks import build_wx_gather_hooks
 
@@ -36,6 +38,53 @@ class WechatSessionErrorTest(unittest.TestCase):
 
             hooks.on_error("session expired", "Invalid Session", {})
             clear_session.assert_called_once()
+
+    def test_http_context_seeds_requests_cookie_jar_from_persisted_session(self):
+        session_data = {
+            "cookies": [
+                {
+                    "name": "slave_sid",
+                    "value": "persisted",
+                    "domain": ".weixin.qq.com",
+                    "path": "/",
+                }
+            ],
+            "user_agent": "ua-from-login",
+        }
+
+        with (
+            patch(
+                "driver.wx.service.get_cookie_header",
+                return_value={"ok": True, "data": "slave_sid=persisted"},
+            ),
+            patch("driver.session.store.Store.load_session", return_value=session_data),
+        ):
+            gather = base.WxGather(hooks=base.WxGatherHooks())
+
+        self.assertEqual(gather.session.cookies.get("slave_sid"), "persisted")
+        self.assertEqual(gather.headers["Cookie"], "slave_sid=persisted")
+
+    def test_over_persists_refreshed_requests_cookies_for_next_account(self):
+        gather = object.__new__(base.WxGather)
+        gather.articles = []
+        gather.hooks = None
+        gather.token = "token"
+        gather.user_agent = "ua"
+        gather.session = requests.Session()
+        gather.session.cookies.set(
+            "slave_sid",
+            "refreshed",
+            domain=".weixin.qq.com",
+            path="/",
+        )
+
+        with patch("driver.session.store.Store.save_session") as save_session:
+            gather.Over()
+
+        saved = save_session.call_args.args[0]
+        self.assertEqual(saved["cookies"][0]["name"], "slave_sid")
+        self.assertEqual(saved["cookies"][0]["value"], "refreshed")
+        self.assertEqual(saved["cookies_str"], "slave_sid=refreshed; ")
 
 
 if __name__ == "__main__":

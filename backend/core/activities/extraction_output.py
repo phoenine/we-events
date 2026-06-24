@@ -260,11 +260,18 @@ def compute_event_status(
         end = end.replace(tzinfo=local_tz)
 
     current_date = today or datetime.now(local_tz).date()
+    local_start = start.astimezone(local_tz) if start else None
     local_end = end.astimezone(local_tz) if end else None
 
     if local_end and local_end.date() <= current_date:
         return "ended"
-    if start or end:
+    if local_start:
+        if local_start.date() > current_date:
+            return "upcoming"
+        if not local_end and local_start.date() < current_date:
+            return "ended"
+        return "ongoing"
+    if local_end:
         return "ongoing"
     return "unknown"
 

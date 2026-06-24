@@ -314,6 +314,15 @@ async def sync_wechat_account_group_articles(
             start_page=start_page,
             max_page=end_page,
         )
+        if result.get("run_id"):
+            await wechat_account_group_repo.mark_schedule_attempt(
+                group_id,
+                {
+                    "last_collection_run_id": result.get("run_id"),
+                    "last_scheduled_at": datetime.now(timezone.utc).isoformat(),
+                    "last_schedule_error": "",
+                },
+            )
         if not result.get("started_account_ids"):
             return success_response(result, message="该分组暂无可采集公众号")
         return success_response(result)

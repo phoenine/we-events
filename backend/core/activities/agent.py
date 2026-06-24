@@ -126,7 +126,7 @@ def extract_activities_with_llm(input_snapshot: dict[str, Any]) -> tuple[Activit
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": float(os.getenv("LLM_TEMPERATURE", "0.1")),
-        "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "4096")),
+        "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "8192")),
     }
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 

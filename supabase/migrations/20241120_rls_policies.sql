@@ -89,6 +89,8 @@ with check (true);
 
 revoke all on function public.claim_next_article_collection_item(text, timestamptz) from public;
 grant execute on function public.claim_next_article_collection_item(text, timestamptz) to service_role;
+revoke all on function public.claim_next_article_collection_run(text, timestamptz) from public;
+grant execute on function public.claim_next_article_collection_run(text, timestamptz) to service_role;
 
 drop policy if exists "activities_service_role_all" on public.activities;
 create policy "activities_service_role_all"

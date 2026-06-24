@@ -76,7 +76,8 @@ class ActivityStatusTest(unittest.TestCase):
         today = date(2026, 6, 15)
         cases = [
             ("2026-06-15T00:00:00+08:00", None, "ongoing"),
-            ("2026-06-16T00:00:00+08:00", None, "ongoing"),
+            ("2026-06-16T00:00:00+08:00", None, "upcoming"),
+            ("2026-06-14T00:00:00+08:00", None, "ended"),
             ("2026-06-01T00:00:00+08:00", "2026-06-15T23:59:59+08:00", "ended"),
             ("2026-06-01T00:00:00+08:00", "2026-06-14T23:59:59+08:00", "ended"),
             (None, "2026-06-16T23:59:59+08:00", "ongoing"),
@@ -98,7 +99,7 @@ class ActivityStatusApiTest(unittest.IsolatedAsyncioTestCase):
                 "id": "activity-1",
                 "start_at": "2099-06-16T00:00:00+08:00",
                 "end_at": None,
-                "event_status": "upcoming",
+                "event_status": "ongoing",
             }
         ]
         with patch.object(
@@ -110,14 +111,14 @@ class ActivityStatusApiTest(unittest.IsolatedAsyncioTestCase):
                 _current_user={"id": "user-1"},
             )
 
-        self.assertEqual(response["data"][0]["event_status"], "ongoing")
+        self.assertEqual(response["data"][0]["event_status"], "upcoming")
 
     async def test_list_filters_after_recomputing_stale_statuses(self):
         stale_row = {
             "id": "activity-1",
-            "start_at": "2099-06-16T00:00:00+08:00",
+            "start_at": "2026-06-14T00:00:00+08:00",
             "end_at": None,
-            "event_status": "upcoming",
+            "event_status": "ongoing",
         }
 
         async def get_activities(**kwargs):
@@ -131,7 +132,7 @@ class ActivityStatusApiTest(unittest.IsolatedAsyncioTestCase):
             response = await activities_api.list_activities(
                 article_id=None,
                 review_status=None,
-                event_status="ongoing",
+                event_status="ended",
                 source_wechat_account_id=None,
                 date_from=None,
                 date_to=None,
@@ -167,7 +168,7 @@ class ActivityStatusApiTest(unittest.IsolatedAsyncioTestCase):
                 _current_user={"id": "user-1"},
             )
 
-        self.assertEqual(response["data"]["event_status"], "ongoing")
+        self.assertEqual(response["data"]["event_status"], "upcoming")
 
     async def test_patch_ignores_client_status_and_recomputes_from_existing_dates(self):
         payload = ActivityUpdate(event_status="ended")
@@ -196,7 +197,7 @@ class ActivityStatusApiTest(unittest.IsolatedAsyncioTestCase):
                 _current_user={"id": "user-1"},
             )
 
-        self.assertEqual(response["data"]["event_status"], "ongoing")
+        self.assertEqual(response["data"]["event_status"], "upcoming")
 
 
 if __name__ == "__main__":

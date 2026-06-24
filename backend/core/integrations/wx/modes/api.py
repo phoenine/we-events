@@ -179,6 +179,7 @@ class WechatAccountApi(WxGather):
                     url, params=params, headers=headers, timeout=self._timeout
                 )
                 resp.raise_for_status()
+                self._sync_cookie_header_from_session()
                 msg = resp.json()
             except Exception as e:
                 # 请求异常属于硬失败：抛出让上层感知（保持原有“异常可见”策略）

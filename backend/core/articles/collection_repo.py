@@ -65,9 +65,9 @@ class ArticleCollectionRepository:
         )
         return rows[0] if rows else None
 
-    async def claim_next_item(self, *, worker_id: str, stale_before: str):
+    async def claim_next_run(self, *, worker_id: str, stale_before: str):
         rows = await self.client.rpc(
-            "claim_next_article_collection_item",
+            "claim_next_article_collection_run",
             {
                 "p_worker_id": worker_id,
                 "p_stale_before": stale_before,
