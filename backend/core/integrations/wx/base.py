@@ -16,6 +16,16 @@ _FALLBACK_USER_AGENTS = [
 ]
 
 
+def _cookies_to_header(cookies: list[dict]) -> str:
+    parts: list[str] = []
+    for cookie in cookies or []:
+        name = str((cookie or {}).get("name") or "")
+        value = (cookie or {}).get("value")
+        if name and value is not None:
+            parts.append(f"{name}={value}")
+    return "; ".join(parts)
+
+
 def wechat_error_code(ret: Any) -> str | None:
     """仅将微信明确的会话失效返回码标记为 Invalid Session。"""
     return "Invalid Session" if str(ret) == "200003" else None
@@ -79,6 +89,15 @@ class WxGather:
             pass
         return ""
 
+    def _load_persisted_session(self) -> dict:
+        try:
+            from driver.session.store import Store
+
+            sess = Store.load_session()
+            return sess if isinstance(sess, dict) else {}
+        except Exception:
+            return {}
+
     def _load_persisted_user_agent(self) -> str:
         """best-effort: 从持久化会话读取登录时浏览器 UA。"""
         try:
@@ -92,6 +111,75 @@ class WxGather:
         except Exception:
             pass
         return ""
+
+    def _seed_session_cookies(self, cookies: list[dict]) -> None:
+        for cookie in cookies or []:
+            if not isinstance(cookie, dict):
+                continue
+            name = str(cookie.get("name") or "")
+            value = cookie.get("value")
+            if not name or value is None:
+                continue
+
+            kwargs: dict[str, Any] = {"path": str(cookie.get("path") or "/")}
+            domain = str(cookie.get("domain") or "")
+            if domain:
+                kwargs["domain"] = domain
+            try:
+                self.session.cookies.set(name, str(value), **kwargs)
+            except Exception:
+                continue
+
+    def _session_cookies_as_list(self) -> list[dict]:
+        cookies: list[dict] = []
+        for cookie in self.session.cookies:
+            item: dict[str, Any] = {
+                "name": cookie.name,
+                "value": cookie.value,
+                "domain": cookie.domain,
+                "path": cookie.path or "/",
+            }
+            if cookie.expires is not None:
+                item["expires"] = cookie.expires
+            if cookie.secure:
+                item["secure"] = True
+            cookies.append(item)
+        return cookies
+
+    def _sync_cookie_header_from_session(self) -> None:
+        cookies = self._session_cookies_as_list()
+        if not cookies:
+            return
+        self.cookies = _cookies_to_header(cookies)
+        if not getattr(self, "headers", None):
+            self.headers = {}
+        self.headers["Cookie"] = self.cookies
+
+    def _persist_http_context(self) -> None:
+        cookies = self._session_cookies_as_list()
+        if not cookies:
+            return
+        try:
+            from driver.session.cookies import expire
+            from driver.session.store import Store
+
+            session = {
+                "cookies": cookies,
+                "cookies_str": "".join(
+                    f"{cookie.get('name')}={cookie.get('value')}; "
+                    for cookie in cookies
+                    if cookie.get("name") and cookie.get("value") is not None
+                ),
+                "wx_login_url": "",
+                "expiry": expire(cookies),
+            }
+            if getattr(self, "token", ""):
+                session["token"] = str(self.token)
+            if getattr(self, "user_agent", ""):
+                session["user_agent"] = str(self.user_agent)
+            Store.save_session(session)
+        except Exception:
+            return
 
     def all_count(self):
         if getattr(self, "articles", None) is not None:
@@ -159,6 +247,7 @@ class WxGather:
                 url, headers=h, allow_redirects=True, timeout=self._timeout
             )
             r.raise_for_status()
+            self._sync_cookie_header_from_session()
 
             final_url = getattr(r, "url", "") or ""
             m = re.search(r"[?&]token=([^&]+)", final_url)
@@ -205,6 +294,7 @@ class WxGather:
 
         # 1) Cookie header（唯一出口）
         cookies = ""
+        persisted = self._load_persisted_session()
         try:
             from driver.wx.service import get_cookie_header
 
@@ -215,8 +305,16 @@ class WxGather:
         except Exception:
             cookies = ""
 
+        persisted_cookies = persisted.get("cookies") if isinstance(persisted, dict) else []
+        if isinstance(persisted_cookies, list):
+            self._seed_session_cookies(persisted_cookies)
+            if not cookies:
+                cookies = _cookies_to_header(persisted_cookies)
+
         # 2) User-Agent（公开接口）
-        ua = self._load_persisted_user_agent()
+        ua = str(persisted.get("user_agent") or "") if isinstance(persisted, dict) else ""
+        if not ua:
+            ua = self._load_persisted_user_agent()
         if not ua:
             try:
                 from driver.browser.playwright import get_realistic_user_agent
@@ -233,6 +331,7 @@ class WxGather:
             "Cookie": self.cookies,
             "User-Agent": self.user_agent,
         }
+        self._sync_cookie_header_from_session()
 
         # token 优先读内存/持久化会话，缺失时按需推导
         if not hasattr(self, "token"):
@@ -292,6 +391,7 @@ class WxGather:
         try:
             r = session.get(url, headers=headers, timeout=self._timeout)
             r.raise_for_status()
+            self._sync_cookie_header_from_session()
             text = r.text
             text = self.remove_common_html_elements(text)
             if "当前环境异常，完成验证后即可继续访问" in text:
@@ -355,6 +455,7 @@ class WxGather:
                 timeout=self._timeout,
             )
             response.raise_for_status()
+            self._sync_cookie_header_from_session()
             data = response.text
             msg = json.loads(data)
             if msg["base_resp"]["ret"] == 200013:
@@ -381,15 +482,6 @@ class WxGather:
         if not self.cookies:
             self.Error("请先扫码登录公众号平台")
             return
-        import time
-
-        self.update_wechat_account(
-            wechat_account_id,
-            {
-                "sync_time": int(time.time()),
-                "update_time": int(time.time()),
-            },
-        )
 
     def Item_Over(self, item=None, CallBack=None):
         # 仅保留回调机制，避免在库层输出噪声日志
@@ -436,6 +528,8 @@ class WxGather:
                 self.hooks.on_over(self.articles or [], wechat_account_id)
         except Exception:
             pass
+
+        self._persist_http_context()
 
         if CallBack is not None:
             CallBack(self.articles)

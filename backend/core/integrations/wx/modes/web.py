@@ -166,6 +166,7 @@ class WechatAccountWeb(WxGather):
                     timeout=self._timeout,
                 )
                 resp.raise_for_status()
+                self._sync_cookie_header_from_session()
                 msg = resp.json()
 
                 base_resp = msg.get("base_resp") or {}

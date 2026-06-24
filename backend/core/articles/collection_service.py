@@ -4,8 +4,9 @@ import asyncio
 import os
 import socket
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 
 from core.articles import article_collection_repo
 from core.common.log import logger
@@ -16,6 +17,9 @@ from core.wechat_accounts.collector import collect_wechat_account_articles
 from jobs.article import UpdateArticle, Update_Over
 
 
+# The shared WeChat MP session is global. Article collection must therefore be
+# globally serial even when more than one backend process is accidentally alive.
+WECHAT_MP_SESSION_SERIAL_REASON = "shared WeChat MP session is global"
 STALE_PROCESSING_MINUTES = int(os.getenv("ARTICLE_COLLECTION_STALE_MINUTES", "45"))
 WORKER_ENABLED = os.getenv("ARTICLE_COLLECTION_WORKER_ENABLED", "true").lower() not in {
     "0",
@@ -29,6 +33,42 @@ WORKER_POLL_INTERVAL_SECONDS = max(
 
 _worker_tasks: list[asyncio.Task[None]] = []
 _worker_stop_event: asyncio.Event | None = None
+
+
+WechatErrorCategory = Literal[
+    "not_logged_in",
+    "invalid_session",
+    "session_reuse_error",
+    "environment_blocked",
+    "frequency_control",
+    "request_error",
+    "unknown",
+]
+
+
+@dataclass(frozen=True)
+class WechatSessionDiagnostics:
+    persisted_session_exists: bool
+    persisted_cookie_count: int
+    cookie_header_present: bool
+    session_cookie_count: int
+    persisted_token_exists: bool
+    has_user_agent: bool
+
+
+class WechatCollectionError(Exception):
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: WechatErrorCategory = "unknown",
+        retryable: bool = False,
+        diagnostics: WechatSessionDiagnostics | None = None,
+    ):
+        super().__init__(message)
+        self.category = category
+        self.retryable = retryable
+        self.diagnostics = diagnostics
 
 
 def _now() -> str:
@@ -152,6 +192,89 @@ def _failed_item_update(item: dict[str, Any], error: str) -> dict[str, Any]:
     }
 
 
+def _wechat_session_diagnostics() -> WechatSessionDiagnostics:
+    try:
+        from driver.session.store import Store
+
+        session = Store.load_session()
+    except Exception:
+        session = None
+    if not isinstance(session, dict):
+        session = {}
+
+    cookies = session.get("cookies")
+    if not isinstance(cookies, list):
+        cookies = []
+    cookies_str = str(session.get("cookies_str") or "")
+    return WechatSessionDiagnostics(
+        persisted_session_exists=bool(session),
+        persisted_cookie_count=len(cookies),
+        cookie_header_present=bool(cookies_str),
+        session_cookie_count=len(cookies),
+        persisted_token_exists=bool(session.get("token")),
+        has_user_agent=bool(session.get("user_agent")),
+    )
+
+
+def _format_session_diagnostics(diagnostics: WechatSessionDiagnostics | None) -> str:
+    if not diagnostics:
+        return ""
+    return (
+        " persisted_session_exists="
+        f"{diagnostics.persisted_session_exists}"
+        f" persisted_cookie_count={diagnostics.persisted_cookie_count}"
+        f" cookie_header_present={diagnostics.cookie_header_present}"
+        f" session_cookie_count={diagnostics.session_cookie_count}"
+        f" persisted_token_exists={diagnostics.persisted_token_exists}"
+        f" has_user_agent={diagnostics.has_user_agent}"
+    )
+
+
+def _classify_collection_exception(exc: Exception) -> WechatCollectionError:
+    if isinstance(exc, WechatCollectionError):
+        return exc
+
+    message = str(exc) or exc.__class__.__name__
+    lower_message = message.lower()
+    if "代码:200003" in message or "invalid session" in lower_message:
+        return WechatCollectionError(message, category="invalid_session")
+    if "请先扫码登录公众号平台" in message:
+        diagnostics = _wechat_session_diagnostics()
+        if diagnostics.persisted_session_exists and (
+            diagnostics.persisted_cookie_count > 0 or diagnostics.persisted_token_exists
+        ):
+            return WechatCollectionError(
+                message,
+                category="session_reuse_error",
+                diagnostics=diagnostics,
+            )
+        return WechatCollectionError(
+            message,
+            category="not_logged_in",
+            diagnostics=diagnostics,
+        )
+    if any(
+        keyword in lower_message
+        for keyword in ("captcha", "environment", "verify", "risk control")
+    ) or any(keyword in message for keyword in ("当前环境异常", "完成验证", "验证码")):
+        return WechatCollectionError(message, category="environment_blocked")
+    if any(keyword in lower_message for keyword in ("frequency", "frequencey")) or any(
+        keyword in message for keyword in ("频控", "访问频繁")
+    ):
+        return WechatCollectionError(message, category="frequency_control", retryable=True)
+    return WechatCollectionError(message, category="unknown")
+
+
+def _terminal_session_error_message(error: WechatCollectionError) -> str:
+    if error.category in {"not_logged_in", "invalid_session"}:
+        return "微信登录态已失效，请重新扫码登录"
+    if error.category == "environment_blocked":
+        return "微信环境验证拦截，本轮剩余账号已跳过"
+    if error.category == "frequency_control":
+        return "微信访问频控，本轮剩余账号已跳过"
+    return str(error)
+
+
 async def _refresh_run_summary(run_id: str) -> dict[str, Any]:
     items = await article_collection_repo.get_items_by_run(run_id)
     total = len(items)
@@ -192,6 +315,22 @@ async def _refresh_run_summary(run_id: str) -> dict[str, Any]:
         data["finished_at"] = finished_at
     await article_collection_repo.update_run(run_id, data)
     run = await article_collection_repo.get_run_by_id(run_id)
+    item_statuses = [
+        {
+            "item_id": item.get("id"),
+            "wechat_account_id": item.get("wechat_account_id"),
+            "status": item.get("status"),
+            "attempt_count": item.get("attempt_count"),
+            "articles_count": item.get("articles_count"),
+            "error": str(item.get("error") or "")[:200],
+        }
+        for item in items
+    ]
+    logger.info(
+        f"[article-collection.run-summary] run_id={run_id} status={status} "
+        f"total={total} success={success} failed={failed} skipped={skipped} "
+        f"active={active} articles_count={articles_count} items={item_statuses}"
+    )
     return run or data
 
 
@@ -330,13 +469,29 @@ async def enqueue_group_collection(
         }
 
     accounts = await wechat_account_repo.get_wechat_accounts_by_ids(account_ids)
+    found_account_ids = {str(account.get("id") or "") for account in accounts}
+    missing_account_ids = [
+        account_id for account_id in account_ids if str(account_id) not in found_account_ids
+    ]
+    logger.info(
+        f"[group-collection.plan] group_id={group_id} requested_account_ids={account_ids} "
+        f"found_account_ids={sorted(found_account_ids)} missing_account_ids={missing_account_ids}"
+    )
     runnable: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     for account in accounts:
         account_id = str(account.get("id") or "")
         if not account_id:
+            logger.info(
+                f"[group-collection.plan] group_id={group_id} decision=skip_missing_id "
+                f"account={account}"
+            )
             continue
         if _is_account_disabled(account):
+            logger.info(
+                f"[group-collection.plan] group_id={group_id} account_id={account_id} "
+                f"decision=skip_disabled status={account.get('status')}"
+            )
             skipped.append({"id": account_id, "reason": "disabled"})
             continue
         active_item = await article_collection_repo.get_latest_active_item_by_account(
@@ -344,8 +499,18 @@ async def enqueue_group_collection(
         )
         if active_item:
             if _is_stale_processing_item(active_item):
+                logger.info(
+                    f"[group-collection.plan] group_id={group_id} account_id={account_id} "
+                    f"decision=mark_stale_failed active_item_id={active_item.get('id')} "
+                    f"active_status={active_item.get('status')}"
+                )
                 await _mark_item_stale_failed(active_item)
             else:
+                logger.info(
+                    f"[group-collection.plan] group_id={group_id} account_id={account_id} "
+                    f"decision=skip_already_running active_item_id={active_item.get('id')} "
+                    f"run_id={active_item.get('run_id')} active_status={active_item.get('status')}"
+                )
                 skipped.append(
                     {
                         "id": account_id,
@@ -358,6 +523,12 @@ async def enqueue_group_collection(
                 continue
         in_cooldown, time_span, sync_interval = await _is_account_in_cooldown(account)
         if in_cooldown:
+            logger.info(
+                f"[group-collection.plan] group_id={group_id} account_id={account_id} "
+                f"decision=skip_cooldown time_span={time_span} sync_interval={sync_interval} "
+                f"last_fetch={account.get('last_fetch')} sync_time={account.get('sync_time')} "
+                f"update_time={account.get('update_time')}"
+            )
             skipped.append(
                 {
                     "id": account_id,
@@ -367,6 +538,12 @@ async def enqueue_group_collection(
                 }
             )
             continue
+        logger.info(
+            f"[group-collection.plan] group_id={group_id} account_id={account_id} "
+            f"decision=runnable time_span={time_span} sync_interval={sync_interval} "
+            f"last_fetch={account.get('last_fetch')} sync_time={account.get('sync_time')} "
+            f"update_time={account.get('update_time')}"
+        )
         runnable.append(account)
 
     run = await article_collection_repo.create_run(
@@ -389,20 +566,29 @@ async def enqueue_group_collection(
     for account in runnable:
         account_id = str(account.get("id") or "")
         try:
-            created.append(
-                await article_collection_repo.create_item(
-                    {
-                        "run_id": run_id,
-                        "wechat_account_id": account_id,
-                        "account_snapshot": account,
-                        "start_page": start_page,
-                        "max_page": max_page,
-                        "max_attempts": max_attempts,
-                    }
-                )
+            item = await article_collection_repo.create_item(
+                {
+                    "run_id": run_id,
+                    "wechat_account_id": account_id,
+                    "account_snapshot": account,
+                    "start_page": start_page,
+                    "max_page": max_page,
+                    "max_attempts": max_attempts,
+                }
             )
-        except Exception:
-            skipped.append({"id": account_id, "reason": "already_running"})
+            created.append(item)
+            logger.info(
+                f"[group-collection.enqueue-item] group_id={group_id} run_id={run_id} "
+                f"item_id={item.get('id')} account_id={account_id} max_attempts={max_attempts}"
+            )
+        except Exception as exc:
+            logger.exception(
+                f"[group-collection.enqueue-item] create failed group_id={group_id} "
+                f"run_id={run_id} account_id={account_id}: {exc}"
+            )
+            skipped.append(
+                {"id": account_id, "reason": "create_item_failed", "error": str(exc)}
+            )
 
     await article_collection_repo.update_run(
         run_id,
@@ -412,6 +598,11 @@ async def enqueue_group_collection(
             "status": "queued" if created else "success",
             **({"finished_at": _now()} if not created else {}),
         },
+    )
+
+    logger.info(
+        f"[group-collection.enqueue] group_id={group_id} account_count={len(accounts)} "
+        f"created={len(created)} skipped={len(skipped)} skipped_accounts={skipped}"
     )
 
     return {
@@ -470,6 +661,12 @@ async def _execute_collection_item(item: dict[str, Any]) -> None:
 
     start_page = int(item.get("start_page") or 0)
     max_page = int(item.get("max_page") or 1)
+    logger.info(
+        f"[article-collection.item] start run_id={run_id} item_id={item_id} "
+        f"account_id={account_id} account_name={account.get('mp_name') or account.get('name')} "
+        f"attempt_count={item.get('attempt_count')} max_attempts={item.get('max_attempts')} "
+        f"start_page={start_page} max_page={max_page}"
+    )
     result = await asyncio.to_thread(_collect_account_sync, account, start_page, max_page)
     count = int((result or {}).get("count") or 0)
     await _update_account_fetch_metadata(account_id, result or {})
@@ -484,6 +681,133 @@ async def _execute_collection_item(item: dict[str, Any]) -> None:
             "locked_by": None,
         },
     )
+    logger.info(
+        f"[article-collection.item] success run_id={run_id} item_id={item_id} "
+        f"account_id={account_id} articles_count={count}"
+    )
+    await _refresh_run_summary(run_id)
+
+
+async def _execute_collection_run(run: dict[str, Any], *, worker_id: str) -> None:
+    run_id = str(run.get("id") or "")
+    if not run_id:
+        logger.error(f"[article-collection.run] invalid run payload={run}")
+        return
+
+    items = await article_collection_repo.get_items_by_run(run_id)
+    logger.info(
+        f"[article-collection.run] start run_id={run_id} worker_id={worker_id} "
+        f"item_count={len(items)} global_serial=True reason={WECHAT_MP_SESSION_SERIAL_REASON}"
+    )
+    should_stop = False
+
+    for index, item in enumerate(items):
+        if should_stop:
+            break
+        status = str(item.get("status") or "queued")
+        if status not in {"queued", "processing"}:
+            logger.info(
+                f"[article-collection.run] skip item run_id={run_id} "
+                f"item_id={item.get('id')} status={status}"
+            )
+            continue
+
+        item_id = str(item.get("id") or "")
+        if not item_id:
+            logger.error(f"[article-collection.run] invalid item payload={item}")
+            continue
+
+        attempt_count = int(item.get("attempt_count") or 0) + 1
+        current_item = {
+            **item,
+            "status": "processing",
+            "attempt_count": attempt_count,
+            "locked_by": worker_id,
+        }
+        await article_collection_repo.update_item(
+            item_id,
+            {
+                "status": "processing",
+                "locked_at": _now(),
+                "locked_by": worker_id,
+                "started_at": _now(),
+                "attempt_count": attempt_count,
+                "error": "",
+            },
+        )
+
+        try:
+            await _execute_collection_item(current_item)
+        except Exception as exc:
+            error = _classify_collection_exception(exc)
+            diagnostic_text = _format_session_diagnostics(error.diagnostics)
+            log_message = (
+                f"[article-collection.run] item failed run_id={run_id} item_id={item_id} "
+                f"account_id={item.get('wechat_account_id')} category={error.category} "
+                f"retryable={error.retryable}{diagnostic_text}: {error}"
+            )
+            if error.category == "unknown":
+                logger.exception(log_message)
+            else:
+                logger.warning(log_message)
+            if error.category == "session_reuse_error":
+                await article_collection_repo.update_item(
+                    item_id,
+                    {
+                        "status": "failed",
+                        "error": f"微信登录态复用异常：{error}{diagnostic_text}",
+                        "finished_at": _now(),
+                        "locked_at": None,
+                        "locked_by": None,
+                    },
+                )
+                continue
+
+            if error.category in {
+                "not_logged_in",
+                "invalid_session",
+                "environment_blocked",
+                "frequency_control",
+            }:
+                stop_message = _terminal_session_error_message(error)
+                await article_collection_repo.update_item(
+                    item_id,
+                    {
+                        "status": "failed",
+                        "error": f"{stop_message}：{error}",
+                        "finished_at": _now(),
+                        "locked_at": None,
+                        "locked_by": None,
+                    },
+                )
+                for remaining in items[index + 1 :]:
+                    if str(remaining.get("status") or "queued") not in {"queued", "processing"}:
+                        continue
+                    remaining_id = str(remaining.get("id") or "")
+                    if not remaining_id:
+                        continue
+                    await article_collection_repo.update_item(
+                        remaining_id,
+                        {
+                            "status": "failed",
+                            "error": stop_message,
+                            "finished_at": _now(),
+                            "locked_at": None,
+                            "locked_by": None,
+                        },
+                    )
+                should_stop = True
+                continue
+
+            failed_update = _failed_item_update(current_item, str(error))
+            logger.info(
+                f"[article-collection.run] failure-update run_id={run_id} item_id={item_id} "
+                f"account_id={item.get('wechat_account_id')} attempt_count={attempt_count} "
+                f"max_attempts={item.get('max_attempts')} next_status={failed_update.get('status')} "
+                f"error={str(error)[:300]}"
+            )
+            await article_collection_repo.update_item(item_id, failed_update)
+
     await _refresh_run_summary(run_id)
 
 
@@ -494,11 +818,11 @@ async def _article_collection_worker_loop(worker_id: str, stop_event: asyncio.Ev
             stale_before = (
                 datetime.now(timezone.utc) - timedelta(minutes=STALE_PROCESSING_MINUTES)
             ).isoformat()
-            item = await article_collection_repo.claim_next_item(
+            run = await article_collection_repo.claim_next_run(
                 worker_id=worker_id,
                 stale_before=stale_before,
             )
-            if not item:
+            if not run:
                 try:
                     await asyncio.wait_for(
                         stop_event.wait(),
@@ -507,17 +831,12 @@ async def _article_collection_worker_loop(worker_id: str, stop_event: asyncio.Ev
                 except asyncio.TimeoutError:
                     pass
                 continue
-            try:
-                await _execute_collection_item(item)
-            except Exception as exc:
-                logger.exception(
-                    f"[article-collection.worker] item failed item_id={item.get('id')}: {exc}"
-                )
-                await article_collection_repo.update_item(
-                    str(item.get("id") or ""),
-                    _failed_item_update(item, str(exc)),
-                )
-                await _refresh_run_summary(str(item.get("run_id") or ""))
+            logger.info(
+                f"[article-collection.worker] claimed-run worker_id={worker_id} "
+                f"run_id={run.get('id')} scope={run.get('scope')} "
+                f"total_items={run.get('total_items')} status={run.get('status')}"
+            )
+            await _execute_collection_run(run, worker_id=worker_id)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -550,7 +869,8 @@ async def start_article_collection_workers() -> None:
     )
     logger.info(
         f"[article-collection.worker] started workers count={len(_worker_tasks)} "
-        f"poll_interval={WORKER_POLL_INTERVAL_SECONDS}s"
+        f"poll_interval={WORKER_POLL_INTERVAL_SECONDS}s global_serial=True "
+        f"reason={WECHAT_MP_SESSION_SERIAL_REASON}"
     )
 
 

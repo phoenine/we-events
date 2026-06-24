@@ -134,7 +134,8 @@ python main.py -init True
 
 - 日志统一走 `core.common.log`（Loguru）
 - 公众号文章采集使用 Supabase 表驱动队列：`article_collection_runs` / `article_collection_items`
-- 公众号文章采集依赖单一微信登录态，后端强制 Uvicorn workers=1，文章采集 worker 固定为单消费者，不提供并发采集配置
+- 公众号文章采集依赖全局唯一的微信 MP 登录态；当前不拆独立服务，采集 worker 内置在 API 进程中运行
+- 因为微信 MP 登录态是全局共享的，文章采集必须全局串行：后端强制 Uvicorn workers=1，进程内只启动一个 article worker，数据库 claim 函数使用 advisory lock 兜底防止多进程并发 claim
 - 活动抽取使用 Supabase 表驱动队列：`activity_extraction_runs`
 - 公众号分组可配置每日固定时间的采集计划；错过执行时间不补偿，OCR 仍按需手动触发
 

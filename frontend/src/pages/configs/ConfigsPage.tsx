@@ -77,7 +77,7 @@ const DEFAULT_VALUES: Required<ConfigValues> = {
   llm_enabled: false,
   llm_api_base: "https://api.siliconflow.cn/v1/chat/completions",
   llm_model: "Qwen/Qwen3-32B",
-  llm_max_tokens: 4096,
+  llm_max_tokens: 8192,
   llm_temperature: 0.2,
   llm_use_for_extraction: true,
   llm_use_for_fallback: true,
