@@ -158,5 +158,4 @@ rg "APIRouter\\(|@router" apis
 - Playwright 与会话状态对抓取流程影响较大，建议在稳定网络和固定环境下运行。
 - 生产环境请显式配置 CORS 白名单与 Supabase 凭据。
 - 前端只通过 FastAPI 访问业务数据；Supabase 表访问由后端 service role 统一管理。
-- 公众号扫码登录态是系统/admin 维护的采集凭据，不按普通用户分别维护。
 - 文章图片 bucket 为 `article-images`，二维码 bucket 为 `qr`。
