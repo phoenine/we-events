@@ -685,7 +685,6 @@ async def _execute_collection_item(item: dict[str, Any]) -> None:
         f"[article-collection.item] success run_id={run_id} item_id={item_id} "
         f"account_id={account_id} articles_count={count}"
     )
-    await _refresh_run_summary(run_id)
 
 
 async def _execute_collection_run(run: dict[str, Any], *, worker_id: str) -> None:
