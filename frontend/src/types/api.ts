@@ -87,6 +87,11 @@ export interface ActivityExtractionBatchResult {
   skipped_count: number;
 }
 
+export interface ActivityCleanupResult {
+  message: string;
+  deleted_count: number;
+}
+
 export interface Activity {
   id: string;
   article_id: string;

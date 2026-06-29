@@ -213,6 +213,12 @@ a {
   gap: 14px;
 }
 
+.activity-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
 .activity-card {
   min-height: 246px;
   border: 1px solid #e7edf5;

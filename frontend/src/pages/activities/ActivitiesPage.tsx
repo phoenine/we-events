@@ -1,5 +1,6 @@
 import {
   CalendarOutlined,
+  ClearOutlined,
   DeleteOutlined,
   EnvironmentOutlined,
   LinkOutlined,
@@ -14,6 +15,7 @@ import type { Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import {
   deleteActivity,
+  deleteEndedActivities,
   getActivityExtractionRun,
   getActivityImageEnrichmentContext,
   listActivities,
@@ -24,6 +26,10 @@ import EmptyState from "@/components/common/EmptyState";
 import PageHeader from "@/components/common/PageHeader";
 import { useAuthStore } from "@/store/authStore";
 import type { Activity, ActivityImageEnrichmentPreview } from "@/types/api";
+import {
+  endedActivityCleanupConfirmation,
+  endedActivityCleanupSuccess,
+} from "@/utils/activityCleanup";
 import {
   loadActivityExtractionRuns,
   removeActivityExtractionRuns,
@@ -222,6 +228,21 @@ export default function ActivitiesPage() {
       return compareActivityTime(a.start_at, b.start_at);
     });
   }, [query.data]);
+  const cleanEnded = useMutation({
+    mutationFn: deleteEndedActivities,
+    onSuccess: (data) => {
+      setSelected((current) =>
+        current?.event_status === "ended" ? null : current
+      );
+      message.success(endedActivityCleanupSuccess(data.deleted_count));
+    },
+    onError: (error) =>
+      message.error(
+        error instanceof Error ? error.message : "清理已结束活动失败"
+      ),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["activities"] }),
+  });
 
   useEffect(() => {
     const timer = window.setInterval(async () => {
@@ -286,6 +307,23 @@ export default function ActivitiesPage() {
       <PageHeader title="活动" subtitle="从文章中抽取的活动信息，支持浏览、复核和清理。" />
 
       <Card className="soft-card">
+        <div className="activity-toolbar">
+          <Popconfirm
+            title={endedActivityCleanupConfirmation()}
+            okText="确认清理"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => cleanEnded.mutate()}
+          >
+            <Button
+              danger
+              icon={<ClearOutlined />}
+              loading={cleanEnded.isPending}
+              disabled={cleanEnded.isPending}
+            >
+              清理过期
+            </Button>
+          </Popconfirm>
+        </div>
         {query.isLoading ? (
           <div className="activity-grid">
             {Array.from({ length: 6 }).map((_, index) => (

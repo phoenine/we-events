@@ -1,17 +1,63 @@
 import inspect
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
 INITIAL_SCHEMA = ROOT / "supabase/migrations/20241120_initial_schema.sql"
-SERIAL_CLAIM_MIGRATION = (
-    ROOT / "supabase/migrations/20260624_serialize_article_collection_runs.sql"
+ORPHAN_REPAIR_MIGRATION = (
+    ROOT / "supabase/migrations/20260629_repair_article_collection_orphans.sql"
 )
+COMPOSE_FILE = ROOT / "docker-compose.yaml"
 
 
 class ArticleCollectionWorkerSerializationTest(unittest.TestCase):
+    def test_worker_without_local_wechat_session_does_not_claim_run(self):
+        from core.articles import collection_service
+
+        async def scenario():
+            stop_event = collection_service.asyncio.Event()
+            claim_next_run = AsyncMock(return_value=None)
+
+            async def stop_after_wait(awaitable, *, timeout):
+                stop_event.set()
+                return await awaitable
+
+            diagnostics = collection_service.WechatSessionDiagnostics(
+                persisted_session_exists=False,
+                persisted_cookie_count=0,
+                cookie_header_present=False,
+                session_cookie_count=0,
+                persisted_token_exists=False,
+                has_user_agent=False,
+            )
+            with (
+                patch.object(
+                    collection_service,
+                    "_wechat_session_diagnostics",
+                    return_value=diagnostics,
+                ),
+                patch.object(
+                    collection_service.article_collection_repo,
+                    "claim_next_run",
+                    claim_next_run,
+                ),
+                patch.object(
+                    collection_service.asyncio,
+                    "wait_for",
+                    side_effect=stop_after_wait,
+                ),
+            ):
+                await collection_service._article_collection_worker_loop(
+                    "worker-without-session",
+                    stop_event,
+                )
+
+            claim_next_run.assert_not_awaited()
+
+        collection_service.asyncio.run(scenario())
+
     def test_article_collection_starts_single_worker(self):
         from core.articles import collection_service
 
@@ -79,14 +125,38 @@ class ArticleCollectionWorkerSerializationTest(unittest.TestCase):
         self.assertIn("claim_next_run", repo_source)
 
     def test_article_collection_run_claim_is_database_serialized(self):
-        for path in (INITIAL_SCHEMA, SERIAL_CLAIM_MIGRATION):
-            sql = path.read_text().lower()
-            with self.subTest(path=path.name):
-                self.assertIn("claim_next_article_collection_run", sql)
-                self.assertIn("pg_try_advisory_xact_lock", sql)
-                self.assertIn("not exists", sql)
-                self.assertIn("status = 'processing'", sql)
-                self.assertIn("public.article_collection_runs", sql)
+        sql = INITIAL_SCHEMA.read_text().lower()
+
+        self.assertIn("claim_next_article_collection_run", sql)
+        self.assertIn("pg_try_advisory_xact_lock", sql)
+        self.assertIn("not exists", sql)
+        self.assertIn("status = 'processing'", sql)
+        self.assertIn("public.article_collection_runs", sql)
+        self.assertIn("item.status in ('queued', 'processing')", sql)
+        self.assertIn(
+            "run.status in ('success', 'partial_success', 'failed', 'canceled')",
+            sql,
+        )
+
+    def test_terminal_runs_cleanup_active_child_items(self):
+        sql = ORPHAN_REPAIR_MIGRATION.read_text().lower()
+
+        self.assertIn(
+            "create or replace function public.claim_next_article_collection_run",
+            sql,
+        )
+        self.assertIn("from public.article_collection_runs as run", sql)
+        self.assertIn("item.status in ('queued', 'processing')", sql)
+        self.assertIn(
+            "run.status in ('success', 'partial_success', 'failed', 'canceled')",
+            sql,
+        )
+
+    def test_compose_forwards_collection_ownership_switches(self):
+        compose = COMPOSE_FILE.read_text()
+
+        self.assertIn("ARTICLE_COLLECTION_WORKER_ENABLED:", compose)
+        self.assertIn("GROUP_COLLECTION_SCHEDULER_ENABLED:", compose)
 
 
 if __name__ == "__main__":

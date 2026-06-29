@@ -461,6 +461,22 @@ begin
         and status = 'processing'
     );
 
+  update public.article_collection_items as item
+  set
+    status = 'failed',
+    error = coalesce(
+      nullif(run.error, ''),
+      '父级文章采集任务已结束，子任务已标记为失败'
+    ),
+    finished_at = coalesce(item.finished_at, now()),
+    locked_at = null,
+    locked_by = null,
+    updated_at = now()
+  from public.article_collection_runs as run
+  where item.run_id = run.id
+    and item.status in ('queued', 'processing')
+    and run.status in ('success', 'partial_success', 'failed', 'canceled');
+
   return query
   with next_run as (
     select run.id

@@ -9,6 +9,30 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class ScheduledGroupCollectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_disabled_scheduler_does_not_create_task(self):
+        from core.wechat_account_groups import scheduler
+
+        created = []
+        with (
+            patch.object(scheduler, "SCHEDULER_ENABLED", False, create=True),
+            patch.object(scheduler, "_scheduler_task", None),
+            patch.object(scheduler, "_scheduler_stop_event", None),
+            patch.object(scheduler.asyncio, "create_task") as create_task,
+        ):
+            create_task.side_effect = lambda coro, name=None: created.append(
+                (coro, name)
+            ) or object()
+
+            try:
+                await scheduler.start_group_collection_scheduler()
+            finally:
+                for coro, _name in created:
+                    coro.close()
+                scheduler._scheduler_task = None
+                scheduler._scheduler_stop_event = None
+
+        self.assertEqual(created, [])
+
     async def test_matching_schedule_is_marked_then_enqueued(self):
         from core.wechat_account_groups.scheduler import run_schedule_tick
 
