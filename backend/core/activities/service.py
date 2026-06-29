@@ -42,6 +42,46 @@ _worker_tasks: list[asyncio.Task[None]] = []
 _worker_stop_event: asyncio.Event | None = None
 
 
+class ActivityExtractionUnavailableError(RuntimeError):
+    pass
+
+
+async def get_activity_extraction_summary() -> dict[str, int]:
+    pending_count, processing_count = await asyncio.gather(
+        article_repo.count_articles_base(
+            filters={"activity_extraction_status": "pending"}
+        ),
+        article_repo.count_articles_base(
+            filters={"activity_extraction_status": "processing"}
+        ),
+    )
+    return {
+        "pending_count": int(pending_count),
+        "processing_count": int(processing_count),
+    }
+
+
+async def enqueue_pending_activity_extractions() -> dict[str, int]:
+    if not os.getenv("LLM_API_KEY", "").strip():
+        raise ActivityExtractionUnavailableError(
+            "未配置 LLM_API_KEY，无法批量抽取活动"
+        )
+    if not WORKER_ENABLED:
+        raise ActivityExtractionUnavailableError("活动抽取 Worker 未启用")
+
+    raw_result = await activity_run_repo.enqueue_pending_runs(
+        prompt_version=PROMPT_VERSION
+    )
+    result = {
+        "matched_count": int(raw_result.get("matched_count") or 0),
+        "queued_count": int(raw_result.get("queued_count") or 0),
+        "skipped_count": int(raw_result.get("skipped_count") or 0),
+    }
+    if result["matched_count"] == 0:
+        raise ValueError("暂无待抽取文章")
+    return result
+
+
 def _parse_datetime(value: Any) -> datetime | None:
     if not value:
         return None

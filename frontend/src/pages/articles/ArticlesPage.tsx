@@ -1,6 +1,7 @@
 import {
   ClearOutlined,
   DeleteOutlined,
+  RocketOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -28,7 +29,12 @@ import {
   deleteArticlesBatch,
   listArticles,
 } from "@/api/articles";
-import { extractArticleActivities, getActivityExtractionRun } from "@/api/activities";
+import {
+  extractArticleActivities,
+  extractPendingActivities,
+  getActivityExtractionRun,
+  getActivityExtractionSummary,
+} from "@/api/activities";
 import {
   getArticleCollectionRun,
   listWechatAccounts,
@@ -41,6 +47,11 @@ import {
   loadActivityExtractionRuns,
   removeActivityExtractionRuns,
 } from "@/utils/activityExtractionRuns";
+import {
+  activityExtractionBatchButtonText,
+  activityExtractionBatchConfirmation,
+  shouldPollActivityExtraction,
+} from "@/utils/activityExtractionBatch";
 import {
   loadArticleCollectionRuns,
   removeArticleCollectionRuns,
@@ -70,6 +81,7 @@ export default function ArticlesPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [selected, setSelected] = useState<Article | null>(null);
   const [extractingArticleId, setExtractingArticleId] = useState<string>();
+  const [watchingBatchExtraction, setWatchingBatchExtraction] = useState(false);
   const [activeExtractionRuns, setActiveExtractionRuns] = useState(loadActivityExtractionRuns);
   const [activeCollectionRuns, setActiveCollectionRuns] = useState(loadArticleCollectionRuns);
   const queryClient = useQueryClient();
@@ -93,6 +105,12 @@ export default function ArticlesPage() {
         sortBy,
         sortOrder,
       })),
+  });
+  const extractionSummaryQuery = useQuery({
+    queryKey: ["activity-extraction-summary"],
+    queryFn: getActivityExtractionSummary,
+    refetchInterval: (summaryQuery) =>
+      shouldPollActivityExtraction(summaryQuery.state.data) ? 2500 : false,
   });
   const accountsQuery = useQuery({
     queryKey: ["wechat-accounts", "article-filter"],
@@ -193,6 +211,25 @@ export default function ArticlesPage() {
     onError: (error) => message.error(error instanceof Error ? error.message : "活动抽取失败"),
     onSettled: () => setExtractingArticleId(undefined),
   });
+  const batchExtractActivities = useMutation({
+    mutationFn: extractPendingActivities,
+    onSuccess: (data) => {
+      setWatchingBatchExtraction(true);
+      message.success(
+        `已加入 ${data.queued_count} 篇，跳过 ${data.skipped_count} 篇`
+      );
+    },
+    onError: (error) =>
+      message.error(
+        error instanceof Error ? error.message : "批量活动抽取入队失败"
+      ),
+    onSettled: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["activity-extraction-summary"],
+      });
+      queryClient.invalidateQueries({ queryKey: ["articles"] });
+    },
+  });
 
   useEffect(() => {
     if (!activeExtractionRuns.length) return;
@@ -264,6 +301,25 @@ export default function ArticlesPage() {
     return () => window.clearInterval(timer);
   }, [activeCollectionRuns, message, queryClient]);
 
+  useEffect(() => {
+    const summary = extractionSummaryQuery.data;
+    if (!summary) return;
+    if (shouldPollActivityExtraction(summary)) {
+      queryClient.invalidateQueries({ queryKey: ["articles"] });
+      return;
+    }
+    if (watchingBatchExtraction) {
+      setWatchingBatchExtraction(false);
+      message.success("批量抽取已完成");
+      queryClient.invalidateQueries({ queryKey: ["activities"] });
+    }
+  }, [
+    extractionSummaryQuery.data,
+    message,
+    queryClient,
+    watchingBatchExtraction,
+  ]);
+
   const confirmClean = (type: "orphan" | "duplicate" | "expired", title: string) => {
     modal.confirm({
       title,
@@ -272,6 +328,29 @@ export default function ArticlesPage() {
       okButtonProps: { danger: true },
       onOk: () => cleanAction.mutate(type),
     });
+  };
+
+  const confirmBatchExtraction = async () => {
+    try {
+      const refreshed = await extractionSummaryQuery.refetch();
+      if (refreshed.error) throw refreshed.error;
+      const pendingCount = refreshed.data?.pending_count || 0;
+      if (!pendingCount) {
+        message.info("暂无待抽取文章");
+        return;
+      }
+      modal.confirm({
+        title: "一键抽取",
+        content: activityExtractionBatchConfirmation(pendingCount),
+        okText: "开始抽取",
+        cancelText: "取消",
+        onOk: () => batchExtractActivities.mutateAsync(),
+      });
+    } catch (error) {
+      message.error(
+        error instanceof Error ? error.message : "获取待抽取文章数量失败"
+      );
+    }
   };
 
   const rowSelection: TableRowSelection<Article> = {
@@ -420,46 +499,71 @@ export default function ArticlesPage() {
         }
       />
       <Card className="soft-card">
-        <Space wrap style={{ marginBottom: 12 }}>
-          <Popconfirm
-            title={`删除选中的 ${selectedRowKeys.length} 篇文章？`}
-            onConfirm={() => batchRemove.mutate(selectedRowKeys.map(String))}
-            okButtonProps={{ danger: true }}
-          >
-            <Button
-              danger
-              icon={<DeleteOutlined />}
-              disabled={!selectedRowKeys.length || articleDeletePending}
-              loading={batchRemove.isPending}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+            marginBottom: 12,
+          }}
+        >
+          <Space wrap>
+            <Popconfirm
+              title={`删除选中的 ${selectedRowKeys.length} 篇文章？`}
+              onConfirm={() => batchRemove.mutate(selectedRowKeys.map(String))}
+              okButtonProps={{ danger: true }}
             >
-              批量删除
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                disabled={!selectedRowKeys.length || articleDeletePending}
+                loading={batchRemove.isPending}
+              >
+                批量删除
+              </Button>
+            </Popconfirm>
+            <Button
+              icon={<ClearOutlined />}
+              loading={cleanAction.isPending}
+              disabled={articleDeletePending}
+              onClick={() => confirmClean("orphan", "清理无效文章？")}
+            >
+              清理无效
             </Button>
-          </Popconfirm>
-          <Button
-            icon={<ClearOutlined />}
-            loading={cleanAction.isPending}
-            disabled={articleDeletePending}
-            onClick={() => confirmClean("orphan", "清理无效文章？")}
-          >
-            清理无效
-          </Button>
-          <Button
-            icon={<ClearOutlined />}
-            loading={cleanAction.isPending}
-            disabled={articleDeletePending}
-            onClick={() => confirmClean("duplicate", "清理重复文章？")}
-          >
-            清理重复
-          </Button>
-          <Button
-            icon={<ClearOutlined />}
-            loading={cleanAction.isPending}
-            disabled={articleDeletePending}
-            onClick={() => confirmClean("expired", "清理 7 天前文章？")}
-          >
-            清理过期
-          </Button>
-        </Space>
+            <Button
+              icon={<ClearOutlined />}
+              loading={cleanAction.isPending}
+              disabled={articleDeletePending}
+              onClick={() => confirmClean("duplicate", "清理重复文章？")}
+            >
+              清理重复
+            </Button>
+            <Button
+              icon={<ClearOutlined />}
+              loading={cleanAction.isPending}
+              disabled={articleDeletePending}
+              onClick={() => confirmClean("expired", "清理 7 天前文章？")}
+            >
+              清理过期
+            </Button>
+          </Space>
+          <Space wrap>
+            <Button
+              type="primary"
+              icon={<RocketOutlined />}
+              loading={batchExtractActivities.isPending}
+              disabled={
+                batchExtractActivities.isPending ||
+                !extractionSummaryQuery.data?.pending_count
+              }
+              onClick={confirmBatchExtraction}
+            >
+              {activityExtractionBatchButtonText()}
+            </Button>
+          </Space>
+        </div>
         <Table
           rowKey="id"
           rowSelection={rowSelection}

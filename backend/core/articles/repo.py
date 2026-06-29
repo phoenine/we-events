@@ -17,11 +17,13 @@ class ArticleRepository:
         limit: Optional[int] = None,
         offset: Optional[int] = None,
         order_by: str = "publish_time.desc",
+        columns: str = "*",
     ):
         """获取文章列表"""
         return await self.client.select(
             self.ARTICLE_TABLE,
             filters=filters,
+            columns=columns,
             limit=limit,
             offset=offset,
             order=order_by,
@@ -178,6 +180,23 @@ class ArticleRepository:
         """删除文章"""
         return await self.client.delete(self.ARTICLE_TABLE, {"id": article_id})
 
+    async def delete_articles_by_ids(
+        self,
+        article_ids: List[str],
+        *,
+        chunk_size: int = 100,
+    ) -> List[Dict[str, Any]]:
+        deleted: List[Dict[str, Any]] = []
+        for start in range(0, len(article_ids), chunk_size):
+            chunk = article_ids[start : start + chunk_size]
+            deleted.extend(
+                await self.client.delete(
+                    self.ARTICLE_TABLE,
+                    {"id": {"in": chunk}},
+                )
+            )
+        return deleted
+
     async def get_article_images(self, article_id: str):
         """获取文章关联图片映射。"""
         return await self.client.select(
@@ -185,6 +204,23 @@ class ArticleRepository:
             filters={"article_id": article_id},
             order="position.asc,created_at.asc",
         )
+
+    async def get_article_images_by_articles(
+        self,
+        article_ids: List[str],
+        *,
+        chunk_size: int = 100,
+    ) -> List[Dict[str, Any]]:
+        images: List[Dict[str, Any]] = []
+        for start in range(0, len(article_ids), chunk_size):
+            chunk = article_ids[start : start + chunk_size]
+            images.extend(
+                await self.client.select(
+                    self.ARTICLE_IMAGE_TABLE,
+                    filters={"article_id": {"in": chunk}},
+                )
+            )
+        return images
 
     async def update_article_image(self, image_id: str, data: Dict[str, Any]):
         """更新单张文章图片的 OCR 缓存等字段。"""

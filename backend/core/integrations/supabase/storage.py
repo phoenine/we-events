@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 import httpx
@@ -109,9 +110,16 @@ class SupabaseStorage:
         """删除单个对象。对象不存在也视为成功。"""
         if not path:
             return True
-        url = f"{self.url}/storage/v1/object/{self.bucket}/{path}"
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.delete(url, headers=self._headers())
+            return await self._delete_object_with_client(client, path)
+
+    async def _delete_object_with_client(
+        self,
+        client: httpx.AsyncClient,
+        path: str,
+    ) -> bool:
+        url = f"{self.url}/storage/v1/object/{self.bucket}/{path}"
+        resp = await client.delete(url, headers=self._headers())
         if resp.status_code in (200, 204, 404):
             return True
         # 自部署 Supabase 可能返回 400 + not found，按已删除处理
@@ -123,6 +131,35 @@ class SupabaseStorage:
             f"status={resp.status_code} body={(resp.text or '')[:300]}"
         )
         return False
+
+    async def delete_objects(
+        self,
+        paths: list[str],
+        *,
+        concurrency: int = 8,
+    ) -> dict[str, int]:
+        """使用同一个 HTTP 客户端受控并发删除多个对象。"""
+        semaphore = asyncio.Semaphore(max(1, concurrency))
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            async def delete_one(path: str) -> bool:
+                async with semaphore:
+                    try:
+                        return await self._delete_object_with_client(client, path)
+                    except Exception as exc:
+                        logger.warning(
+                            f"[supabase-storage] delete error bucket={self.bucket} "
+                            f"path={path} type={type(exc).__name__}: {exc}"
+                        )
+                        return False
+
+            results = await asyncio.gather(*(delete_one(path) for path in paths))
+
+        deleted_count = sum(1 for result in results if result)
+        return {
+            "deleted_count": deleted_count,
+            "failed_count": len(results) - deleted_count,
+        }
 
     async def upload_qr(self, data: bytes) -> dict[str, str]:
         path = self.path
