@@ -358,6 +358,50 @@ async def update_activity(
     return await patch_activity(activity_id, payload, _current_user)
 
 
+@router.delete("/ended", summary="删除全部已结束活动")
+async def delete_ended_activities(
+    _current_user: dict = Depends(get_current_user),
+):
+    try:
+        ended_activity_ids: list[str] = []
+        scan_offset = 0
+        scan_limit = 500
+        while True:
+            rows = await activity_repo.get_activities(
+                limit=scan_limit,
+                offset=scan_offset,
+            )
+            ended_activity_ids.extend(
+                str(row["id"])
+                for row in rows
+                if row.get("id")
+                and compute_event_status(
+                    row.get("start_at"),
+                    row.get("end_at"),
+                )
+                == "ended"
+            )
+            if len(rows) < scan_limit:
+                break
+            scan_offset += len(rows)
+
+        deleted_count = await activity_repo.delete_activities_by_ids(
+            ended_activity_ids
+        )
+        return success_response(
+            {
+                "message": "已删除全部已结束活动",
+                "deleted_count": deleted_count,
+            }
+        )
+    except Exception as exc:
+        logger.exception(f"[activities.delete_ended] failed: {exc}")
+        raise HTTPException(
+            status_code=fast_status.HTTP_400_BAD_REQUEST,
+            detail=error_response(code=40006, message=f"清理失败: {str(exc)}"),
+        )
+
+
 @router.delete("/{activity_id}", summary="删除活动记录")
 async def delete_activity(
     activity_id: str,

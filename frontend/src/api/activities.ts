@@ -1,6 +1,7 @@
 import http from "@/api/http";
 import type {
   Activity,
+  ActivityCleanupResult,
   ActivityExtractionBatchResult,
   ActivityExtractionSummary,
   ActivityImageEnrichmentContext,
@@ -45,6 +46,10 @@ export function updateActivity(id: string, payload: Partial<Activity>): Promise<
 
 export function deleteActivity(id: string) {
   return http.delete(`/wx/activities/${id}`);
+}
+
+export function deleteEndedActivities(): Promise<ActivityCleanupResult> {
+  return http.delete("/wx/activities/ended");
 }
 
 export function extractArticleActivities(articleId: string) {

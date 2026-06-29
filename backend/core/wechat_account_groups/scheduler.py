@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import datetime
 from typing import Any, Awaitable, Callable
 from zoneinfo import ZoneInfo
@@ -12,6 +13,13 @@ from core.wechat_account_groups import wechat_account_group_repo
 
 SCHEDULE_TIMEZONE = ZoneInfo("Asia/Shanghai")
 SCHEDULE_POLL_SECONDS = 30
+SCHEDULER_ENABLED = os.getenv(
+    "GROUP_COLLECTION_SCHEDULER_ENABLED", "true"
+).lower() not in {
+    "0",
+    "false",
+    "no",
+}
 
 _scheduler_task: asyncio.Task[None] | None = None
 _scheduler_stop_event: asyncio.Event | None = None
@@ -83,6 +91,12 @@ async def _scheduler_loop(stop_event: asyncio.Event) -> None:
 
 async def start_group_collection_scheduler() -> None:
     global _scheduler_task, _scheduler_stop_event
+    if not SCHEDULER_ENABLED:
+        logger.info(
+            "[group-collection.scheduler] disabled by "
+            "GROUP_COLLECTION_SCHEDULER_ENABLED"
+        )
+        return
     if _scheduler_task is not None and not _scheduler_task.done():
         return
     _scheduler_stop_event = asyncio.Event()

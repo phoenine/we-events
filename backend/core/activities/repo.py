@@ -81,6 +81,21 @@ class ActivitiesRepository:
         )
         return bool(rows)
 
+    async def delete_activities_by_ids(
+        self,
+        activity_ids: list[str],
+        *,
+        chunk_size: int = 100,
+    ) -> int:
+        deleted_count = 0
+        for start in range(0, len(activity_ids), chunk_size):
+            rows = await self.client.delete(
+                self.ACTIVITY_TABLE,
+                filters={"id": {"in": activity_ids[start : start + chunk_size]}},
+            )
+            deleted_count += len(rows)
+        return deleted_count
+
     async def delete_activities_by_article(self, article_id: str):
         return await self.client.delete(
             self.ACTIVITY_TABLE,

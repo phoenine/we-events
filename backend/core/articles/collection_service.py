@@ -216,6 +216,14 @@ def _wechat_session_diagnostics() -> WechatSessionDiagnostics:
     )
 
 
+def _is_collection_worker_ready() -> bool:
+    diagnostics = _wechat_session_diagnostics()
+    return bool(
+        diagnostics.cookie_header_present
+        or diagnostics.persisted_cookie_count > 0
+    )
+
+
 def _format_session_diagnostics(diagnostics: WechatSessionDiagnostics | None) -> str:
     if not diagnostics:
         return ""
@@ -812,8 +820,30 @@ async def _execute_collection_run(run: dict[str, Any], *, worker_id: str) -> Non
 
 async def _article_collection_worker_loop(worker_id: str, stop_event: asyncio.Event) -> None:
     logger.info(f"[article-collection.worker] started worker_id={worker_id}")
+    waiting_for_session = False
     while not stop_event.is_set():
         try:
+            if not _is_collection_worker_ready():
+                if not waiting_for_session:
+                    logger.warning(
+                        f"[article-collection.worker] waiting-for-session "
+                        f"worker_id={worker_id}"
+                    )
+                    waiting_for_session = True
+                try:
+                    await asyncio.wait_for(
+                        stop_event.wait(),
+                        timeout=WORKER_POLL_INTERVAL_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    pass
+                continue
+            if waiting_for_session:
+                logger.info(
+                    f"[article-collection.worker] session-ready worker_id={worker_id}"
+                )
+                waiting_for_session = False
+
             stale_before = (
                 datetime.now(timezone.utc) - timedelta(minutes=STALE_PROCESSING_MINUTES)
             ).isoformat()
