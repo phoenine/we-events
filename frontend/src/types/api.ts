@@ -76,6 +76,17 @@ export interface Article {
   activity_extraction_status?: string;
 }
 
+export interface ActivityExtractionSummary {
+  pending_count: number;
+  processing_count: number;
+}
+
+export interface ActivityExtractionBatchResult {
+  matched_count: number;
+  queued_count: number;
+  skipped_count: number;
+}
+
 export interface Activity {
   id: string;
   article_id: string;

@@ -346,6 +346,80 @@ begin
 end;
 $$;
 
+create or replace function public.enqueue_pending_activity_extractions(
+  p_prompt_version text
+)
+returns table (
+  matched_count bigint,
+  queued_count bigint,
+  skipped_count bigint
+)
+language plpgsql
+as $$
+declare
+  v_matched_count bigint := 0;
+  v_queued_count bigint := 0;
+begin
+  select count(*)
+  into v_matched_count
+  from public.articles
+  where activity_extraction_status = 'pending';
+
+  with candidates as (
+    select article.id
+    from public.articles as article
+    where article.activity_extraction_status = 'pending'
+      and not exists (
+        select 1
+        from public.activity_extraction_runs as active_run
+        where active_run.article_id = article.id
+          and active_run.status in ('queued', 'processing')
+      )
+    order by article.created_at, article.id
+    for update of article skip locked
+  ),
+  inserted as (
+    insert into public.activity_extraction_runs (
+      article_id,
+      status,
+      model,
+      prompt_version,
+      input_snapshot,
+      queued_at
+    )
+    select
+      candidates.id,
+      'queued',
+      '',
+      p_prompt_version,
+      '{}'::jsonb,
+      now()
+    from candidates
+    on conflict do nothing
+    returning article_id
+  ),
+  updated as (
+    update public.articles as article
+    set
+      activity_extraction_status = 'processing',
+      activity_extraction_error = '',
+      updated_at = now()
+    from inserted
+    where article.id = inserted.article_id
+    returning article.id
+  )
+  select count(*)
+  into v_queued_count
+  from updated;
+
+  return query
+  select
+    v_matched_count,
+    v_queued_count,
+    greatest(v_matched_count - v_queued_count, 0);
+end;
+$$;
+
 create or replace function public.claim_next_article_collection_run(
   p_worker_id text,
   p_stale_before timestamptz

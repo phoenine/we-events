@@ -14,7 +14,12 @@ from core.activities.image_enrichment import (
 )
 from core.activities.image_enrichment_agent import ImageEnrichmentConfigurationError
 from core.activities.ocr_client import OcrConfigurationError
-from core.activities.service import start_activity_extraction
+from core.activities.service import (
+    ActivityExtractionUnavailableError,
+    enqueue_pending_activity_extractions,
+    get_activity_extraction_summary,
+    start_activity_extraction,
+)
 from core.articles import article_repo
 from core.common.log import logger
 from core.common.runtime_settings import runtime_settings
@@ -27,6 +32,50 @@ router = APIRouter(prefix="/activities", tags=["活动"])
 
 def _drop_none(data: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in data.items() if value is not None}
+
+
+@router.get("/extraction-summary", summary="获取活动抽取汇总")
+async def activity_extraction_summary(
+    _current_user: dict = Depends(get_current_user),
+):
+    try:
+        return success_response(await get_activity_extraction_summary())
+    except Exception as exc:
+        logger.exception(f"[activities.extract.summary.api] failed: {exc}")
+        raise HTTPException(
+            status_code=fast_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(
+                code=50007,
+                message=f"获取活动抽取汇总失败: {str(exc)}",
+            ),
+        )
+
+
+@router.post("/extract/pending", summary="批量抽取所有待处理文章")
+async def extract_pending_activities(
+    _current_user: dict = Depends(get_current_user),
+):
+    try:
+        return success_response(await enqueue_pending_activity_extractions())
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=fast_status.HTTP_400_BAD_REQUEST,
+            detail=error_response(code=40007, message=str(exc)),
+        )
+    except ActivityExtractionUnavailableError as exc:
+        raise HTTPException(
+            status_code=fast_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=error_response(code=50301, message=str(exc)),
+        )
+    except Exception as exc:
+        logger.exception(f"[activities.extract.batch.api] failed: {exc}")
+        raise HTTPException(
+            status_code=fast_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(
+                code=50008,
+                message=f"批量活动抽取入队失败: {str(exc)}",
+            ),
+        )
 
 
 @router.post("/extract/article/{article_id}", summary="从单篇文章抽取活动")

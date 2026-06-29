@@ -109,6 +109,19 @@ class ActivityExtractionRunsRepository:
         filters = {"status": status} if status else None
         return await self.client.count(self.RUN_TABLE, filters=filters)
 
+    async def enqueue_pending_runs(self, *, prompt_version: str):
+        rows = await self.client.rpc(
+            "enqueue_pending_activity_extractions",
+            {"p_prompt_version": prompt_version},
+        )
+        if rows:
+            return rows[0]
+        return {
+            "matched_count": 0,
+            "queued_count": 0,
+            "skipped_count": 0,
+        }
+
     async def get_latest_processing_run_by_article(self, article_id: str):
         rows = await self.client.select(
             self.RUN_TABLE,

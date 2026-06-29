@@ -1,6 +1,8 @@
 import http from "@/api/http";
 import type {
   Activity,
+  ActivityExtractionBatchResult,
+  ActivityExtractionSummary,
   ActivityImageEnrichmentContext,
   ActivityImageEnrichmentPreview,
 } from "@/types/api";
@@ -51,6 +53,14 @@ export function extractArticleActivities(articleId: string) {
 
 export function getActivityExtractionRun(runId: string) {
   return http.get(`/wx/activities/extraction-runs/${runId}`);
+}
+
+export function getActivityExtractionSummary(): Promise<ActivityExtractionSummary> {
+  return http.get("/wx/activities/extraction-summary");
+}
+
+export function extractPendingActivities(): Promise<ActivityExtractionBatchResult> {
+  return http.post("/wx/activities/extract/pending");
 }
 
 export function getActivityImageEnrichmentContext(
