@@ -101,23 +101,13 @@ class PlaywrightController:
                                 "--no-sandbox",
                             ]
                             logger.info(
-                                f"启动 Playwright 浏览器: type=chrome/chromium headless={headless} anti_crawler={anti_crawler}"
+                                f"启动 Playwright 浏览器: type=bundled-chromium headless={headless} anti_crawler={anti_crawler}"
                             )
                             launch_options = {
                                 "headless": headless,
                                 "args": launch_args,
                             }
-                            try:
-                                self.browser = browser_type.launch(
-                                    channel="chrome",
-                                    **launch_options,
-                                )
-                                logger.info("Playwright 使用系统 Chrome 启动")
-                            except Exception as e:
-                                logger.warning(
-                                    f"系统 Chrome 启动失败，回退到 bundled Chromium: {e}"
-                                )
-                                self.browser = browser_type.launch(**launch_options)
+                            self.browser = browser_type.launch(**launch_options)
                             # 启动成功后创建上下文与页面（保持在同一把实例锁内，防止并发 cleanup）
                             context_options = {
                                 "locale": language,

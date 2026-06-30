@@ -206,6 +206,21 @@ class WXArticleFetcher:
 
         return fallback
 
+    @staticmethod
+    def _extract_mp_logo(page) -> str:
+        """从关注栏提取公众号头像；关注栏缺失时允许头像为空。"""
+        try:
+            logo = page.locator(
+                "#js_like_profile_bar .wx_follow_avatar img"
+            ).first
+            return (
+                logo.get_attribute("src", timeout=1000)
+                or logo.get_attribute("data-src", timeout=1000)
+                or ""
+            )
+        except Exception:
+            return ""
+
     def _inject_mp_cookies(self):
         """向浏览器上下文注入已保存的公众号 Cookie"""
         try:
@@ -501,11 +516,7 @@ class WXArticleFetcher:
                     )
                 raise
 
-            # 等待关键元素加载
-            # 使用更精确的选择器避免匹配多个元素
-            ele_logo = page.locator("#js_like_profile_bar .wx_follow_avatar img")
-            # 获取<img>公众号分组的src属性
-            logo_src = ele_logo.get_attribute("src")
+            logo_src = self._extract_mp_logo(page)
 
             # 获取公众号名称：优先用源码里的完整 nickname，展示节点可能已被微信截断为“...”
             try:
