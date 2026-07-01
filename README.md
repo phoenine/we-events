@@ -1,10 +1,10 @@
 # we-events
 
-we-events 是一个面向微信公众号内容采集和活动信息整理的 Web 应用。项目可以维护公众号来源、采集公众号文章、保存文章图片，并从文章内容中抽取活动信息。
+we-events 是一个用于采集微信公众号内容并整理活动信息的 Web 应用。它可以维护公众号来源、采集公众号文章、保存文章图片，并从文章内容中抽取活动信息。部分特性的实现参考了 [weRSS](https://github.com/letuswerss/werss) 项目。
 
-项目由 FastAPI 后端、React 管理前端和 Supabase 数据存储组成。
+项目由 FastAPI 后端、React 管理前端以及 Supabase 数据库与对象存储组成。
 
-![alt text](we-events.png)
+![we-events 界面](we-events.png)
 
 ## 功能
 
@@ -28,7 +28,7 @@ we-events 是一个面向微信公众号内容采集和活动信息整理的 Web
 .
 ├── backend/                 # FastAPI 后端服务
 ├── frontend/                # React + Vite 前端
-├── supabase/                # Supabase schema、RLS、函数、迁移和本地配置
+├── supabase/                # Supabase 数据库结构、RLS、函数、迁移和本地配置
 ├── docker-compose.yaml      # 本地 backend/frontend 编排
 ├── validate.sh              # 项目校验脚本
 └── .github/workflows/       # CI 镜像构建流程
@@ -51,7 +51,7 @@ we-events 是一个面向微信公众号内容采集和活动信息整理的 Web
 cp .env.local.example .env.local
 ```
 
-如果使用 Supabase online：
+如果使用云端 Supabase：
 
 ```bash
 cp .env.online.example .env.online
@@ -63,7 +63,7 @@ cp .env.online.example .env.online
 cp backend/.env.example backend/.env
 ```
 
-后端必需配置包括：
+后端必填配置包括：
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
@@ -140,7 +140,7 @@ Vite 开发服务会将 `/api` 请求代理到后端，代理配置见 `frontend
 docker compose --env-file .env.local up --build
 ```
 
-使用 Supabase online 配置启动：
+使用云端 Supabase 配置启动：
 
 ```bash
 docker compose --env-file .env.online up --build
@@ -151,8 +151,7 @@ docker compose --env-file .env.online up --build
 - 后端：`http://localhost:38001`
 - 前端：`http://localhost:30000`
 
-
-测试账户:
+测试账户：
 
 - username: admin@phoenine.top
 - password: WxHelper@2025!
