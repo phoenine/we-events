@@ -1,6 +1,7 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { App } from "antd";
 import { clearToken, getToken } from "@/utils/auth";
+import { wxAuthErrorTexts } from "@/utils/obfuscate";
 
 export const WX_AUTH_HINT_EVENT = "wx-auth-required";
 
@@ -15,13 +16,9 @@ function extractErrorText(payload: unknown): string {
 }
 
 function isWechatAuthError(text: string): boolean {
-  return [
-    "当前环境异常",
-    "完成验证后即可继续访问",
-    "登录态异常",
-    "请先扫码登录公众号平台",
-    "Invalid Session",
-  ].some((item) => text.includes(item));
+  return [...wxAuthErrorTexts(), "Invalid Session"].some((item) =>
+    text.includes(item),
+  );
 }
 
 function notifyWechatAuthRequired(reason: string) {

@@ -34,7 +34,7 @@ export default function LoginPage() {
           we-events
         </Typography.Title>
         <Typography.Paragraph type="secondary">
-          登录后管理公众号采集、文章和活动数据。
+          内部管理系统，请输入管理员账号密码登录。
         </Typography.Paragraph>
         <Form layout="vertical" onFinish={onFinish} requiredMark={false}>
           <Form.Item name="username" label="账号" rules={[{ required: true, message: "请输入账号" }]}>
