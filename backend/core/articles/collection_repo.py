@@ -49,6 +49,10 @@ class ArticleCollectionRepository:
             order="created_at.asc",
         )
 
+    async def get_item_by_id(self, item_id: str):
+        rows = await self.client.select(self.ITEM_TABLE, filters={"id": item_id}, limit=1)
+        return rows[0] if rows else None
+
     async def count_items(self, status: str | None = None):
         filters = {"status": status} if status else None
         return await self.client.count(self.ITEM_TABLE, filters=filters)
