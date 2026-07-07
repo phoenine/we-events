@@ -21,6 +21,7 @@ from jobs.article import UpdateArticle, Update_Over
 # globally serial even when more than one backend process is accidentally alive.
 WECHAT_MP_SESSION_SERIAL_REASON = "shared WeChat MP session is global"
 STALE_PROCESSING_MINUTES = int(os.getenv("ARTICLE_COLLECTION_STALE_MINUTES", "45"))
+STALE_QUEUED_HOURS = int(os.getenv("ARTICLE_COLLECTION_QUEUED_STALE_HOURS", "24"))
 WORKER_ENABLED = os.getenv("ARTICLE_COLLECTION_WORKER_ENABLED", "true").lower() not in {
     "0",
     "false",
@@ -101,15 +102,20 @@ def _last_sync_epoch(account: dict[str, Any]) -> int:
     return int(dt.timestamp()) if dt else 0
 
 
-def _is_stale_processing_item(item: dict[str, Any]) -> bool:
-    if item.get("status") != "processing":
+def _is_stale_queued_item(item: dict[str, Any]) -> bool:
+    if item.get("status") != "queued":
         return False
-    started_at = _parse_datetime(item.get("locked_at") or item.get("started_at") or item.get("created_at"))
-    if not started_at:
+    queued_at = _parse_datetime(item.get("queued_at") or item.get("created_at"))
+    if not queued_at:
         return False
-    return datetime.now(timezone.utc) - started_at > timedelta(
-        minutes=STALE_PROCESSING_MINUTES
-    )
+    return datetime.now(timezone.utc) - queued_at > timedelta(hours=STALE_QUEUED_HOURS)
+
+
+async def _expire_stale_queued_item(item: dict[str, Any]) -> bool:
+    if _is_stale_queued_item(item):
+        await _mark_item_stale_failed(item)
+        return True
+    return False
 
 
 def _is_account_disabled(account: dict[str, Any]) -> bool:
@@ -366,8 +372,8 @@ async def enqueue_account_collection(
         wechat_account_id
     )
     if active_item:
-        if _is_stale_processing_item(active_item):
-            await _mark_item_stale_failed(active_item)
+        if await _expire_stale_queued_item(active_item):
+            pass
         else:
             return {
                 "run_id": active_item.get("run_id"),
@@ -506,13 +512,12 @@ async def enqueue_group_collection(
             account_id
         )
         if active_item:
-            if _is_stale_processing_item(active_item):
+            if await _expire_stale_queued_item(active_item):
                 logger.info(
                     f"[group-collection.plan] group_id={group_id} account_id={account_id} "
-                    f"decision=mark_stale_failed active_item_id={active_item.get('id')} "
+                    f"decision=mark_stale_queued_failed active_item_id={active_item.get('id')} "
                     f"active_status={active_item.get('status')}"
                 )
-                await _mark_item_stale_failed(active_item)
             else:
                 logger.info(
                     f"[group-collection.plan] group_id={group_id} account_id={account_id} "
@@ -711,17 +716,21 @@ async def _execute_collection_run(run: dict[str, Any], *, worker_id: str) -> Non
     for index, item in enumerate(items):
         if should_stop:
             break
+        item_id = str(item.get("id") or "")
+        if not item_id:
+            logger.error(f"[article-collection.run] invalid item payload={item}")
+            continue
+
+        latest_item = await article_collection_repo.get_item_by_id(item_id)
+        if latest_item:
+            item = latest_item
+
         status = str(item.get("status") or "queued")
         if status not in {"queued", "processing"}:
             logger.info(
                 f"[article-collection.run] skip item run_id={run_id} "
                 f"item_id={item.get('id')} status={status}"
             )
-            continue
-
-        item_id = str(item.get("id") or "")
-        if not item_id:
-            logger.error(f"[article-collection.run] invalid item payload={item}")
             continue
 
         attempt_count = int(item.get("attempt_count") or 0) + 1
