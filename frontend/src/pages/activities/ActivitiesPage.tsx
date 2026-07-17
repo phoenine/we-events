@@ -3,13 +3,14 @@ import {
   ClearOutlined,
   DeleteOutlined,
   EnvironmentOutlined,
+  EyeOutlined,
   LinkOutlined,
   ScheduleOutlined,
   TagsOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, App, Button, Card, Checkbox, DatePicker, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Tag, Typography } from "antd";
+import { Alert, App, Button, Card, Checkbox, DatePicker, Form, Input, Modal, Popconfirm, Select, Space, Tag, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
@@ -76,18 +77,14 @@ const eventStatusMeta: Record<string, { label: string; color: string; className:
   ended: { label: "已结束", color: "default", className: "status-ended", order: 3 },
 };
 
-const reviewStatusMeta: Record<string, { label: string; color: string }> = {
-  published: { label: "已发布", color: "success" },
-  needs_review: { label: "需复核", color: "warning" },
-  rejected: { label: "已拒绝", color: "error" },
-};
-
 function getEventMeta(status?: string) {
   return eventStatusMeta[status || "unknown"] || eventStatusMeta.unknown;
 }
 
-function getReviewMeta(status?: string) {
-  return reviewStatusMeta[status || "needs_review"] || reviewStatusMeta.needs_review;
+function formatConfidence(value?: number) {
+  if (typeof value !== "number") return undefined;
+  const normalized = value <= 1 ? value * 100 : value;
+  return `${Math.round(normalized)}%`;
 }
 
 function getActivityTime(activity: Activity) {
@@ -130,6 +127,7 @@ export default function ActivitiesPage() {
   const currentUser = useAuthStore((state) => state.user);
   const [selected, setSelected] = useState<Activity | null>(null);
   const [calendarActivity, setCalendarActivity] = useState<Activity | null>(null);
+  const [eventStatusFilter, setEventStatusFilter] = useState<string>("all");
   const [enrichmentPreview, setEnrichmentPreview] =
     useState<ActivityImageEnrichmentPreview | null>(null);
   const [selectedEnrichmentFields, setSelectedEnrichmentFields] = useState<
@@ -219,7 +217,11 @@ export default function ActivitiesPage() {
   });
 
   const activities = useMemo(() => {
-    return [...(query.data || [])].sort((a, b) => {
+    return [...(query.data || [])]
+      .filter((activity) =>
+        eventStatusFilter === "all" ? true : activity.event_status === eventStatusFilter
+      )
+      .sort((a, b) => {
       const statusDiff = getEventMeta(a.event_status).order - getEventMeta(b.event_status).order;
       if (statusDiff !== 0) return statusDiff;
       if (a.event_status === "ended" || b.event_status === "ended") {
@@ -227,7 +229,19 @@ export default function ActivitiesPage() {
       }
       return compareActivityTime(a.start_at, b.start_at);
     });
-  }, [query.data]);
+  }, [eventStatusFilter, query.data]);
+  const activityStats = useMemo(() => {
+    const total = activities.length;
+    const upcoming = activities.filter((item) => item.event_status === "upcoming").length;
+    const ongoing = activities.filter((item) => item.event_status === "ongoing").length;
+    const needsReview = activities.filter((item) => item.review_status === "needs_review").length;
+    return [
+      { label: "总活动", description: "当前已抽取活动", value: total, tone: "blue" },
+      { label: "进行中", description: "正在发生的活动", value: ongoing, tone: "green" },
+      { label: "即将开始", description: "按时间排序靠前", value: upcoming, tone: "purple" },
+      { label: "需复核", description: "待人工确认字段", value: needsReview, tone: "amber" },
+    ];
+  }, [activities]);
   const cleanEnded = useMutation({
     mutationFn: deleteEndedActivities,
     onSuccess: (data) => {
@@ -304,26 +318,59 @@ export default function ActivitiesPage() {
 
   return (
     <div className="page">
-      <PageHeader title="活动" subtitle="从文章中抽取的活动信息，支持浏览、复核和清理。" />
-
-      <Card className="soft-card">
-        <div className="activity-toolbar">
-          <Popconfirm
-            title={endedActivityCleanupConfirmation()}
-            okText="确认清理"
-            okButtonProps={{ danger: true }}
-            onConfirm={() => cleanEnded.mutate()}
-          >
-            <Button
-              danger
-              icon={<ClearOutlined />}
-              loading={cleanEnded.isPending}
-              disabled={cleanEnded.isPending}
+      <PageHeader
+        title="活动"
+        subtitle="从文章中抽取的活动信息，支持浏览、复核和清理。"
+        actions={
+          <>
+            <Select
+              className="status-filter"
+              value={eventStatusFilter}
+              onChange={setEventStatusFilter}
+              options={[
+                { value: "all", label: "全部状态" },
+                { value: "ongoing", label: "进行中" },
+                { value: "upcoming", label: "即将开始" },
+                { value: "unknown", label: "时间待确认" },
+                { value: "ended", label: "已结束" },
+              ]}
+            />
+            <Popconfirm
+              title={endedActivityCleanupConfirmation()}
+              okText="确认清理"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => cleanEnded.mutate()}
             >
-              清理过期
-            </Button>
-          </Popconfirm>
-        </div>
+              <Button
+                danger
+                icon={<ClearOutlined />}
+                loading={cleanEnded.isPending}
+                disabled={cleanEnded.isPending}
+              >
+                清理过期
+              </Button>
+            </Popconfirm>
+          </>
+        }
+      />
+
+      <div className="wechat-stats">
+        {activityStats.map((item) => (
+          <Card key={item.label} className="stat-card">
+            <div className={`stat-value-block stat-value-${item.tone}`}>{item.value}</div>
+            <div>
+              <div className="stat-label">{item.label}</div>
+              <div className="stat-description">{item.description}</div>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      <Card
+        className="soft-card content-panel activity-list-panel"
+        title="活动列表"
+        extra={<span className="panel-count">共 {activities.length} 个活动</span>}
+      >
         {query.isLoading ? (
           <div className="activity-grid">
             {Array.from({ length: 6 }).map((_, index) => (
@@ -334,8 +381,14 @@ export default function ActivitiesPage() {
           <div className="activity-grid">
             {activities.map((activity) => {
               const eventMeta = getEventMeta(activity.event_status);
-              const reviewMeta = getReviewMeta(activity.review_status);
+              const confidenceText = formatConfidence(activity.confidence);
               const lowConfidence = typeof activity.confidence === "number" && activity.confidence < 0.5;
+              const activityTitle = activity.title || "未命名活动";
+              const activitySummary = activity.summary || activity.registration_text || "暂无活动摘要";
+              const activityTime = getActivityTime(activity);
+              const activityLocation = activity.location_text || "地点待确认";
+              const activityFee = activity.fee_text || "费用待确认";
+              const activityAudience = activity.audience || "人群待确认";
 
               return (
                 <Card
@@ -345,51 +398,65 @@ export default function ActivitiesPage() {
                   onClick={() => setSelected(activity)}
                 >
                   <div className="activity-card-head">
-                    <Tag color={eventMeta.color}>{eventMeta.label}</Tag>
-                    <Tag color={reviewMeta.color}>{reviewMeta.label}</Tag>
+                    <Space size={6} wrap>
+                      <Tag color={eventMeta.color}>{eventMeta.label}</Tag>
+                    </Space>
+                    {confidenceText && (
+                      <Tag color={lowConfidence ? "warning" : "default"}>
+                        置信度 {confidenceText}
+                      </Tag>
+                    )}
                   </div>
 
-                  <Typography.Title level={4} className="activity-card-title">
-                    {activity.title || "未命名活动"}
-                  </Typography.Title>
+                  <Tooltip title={activityTitle}>
+                    <Typography.Title level={4} className="activity-card-title">
+                      {activityTitle}
+                    </Typography.Title>
+                  </Tooltip>
 
-                  <Typography.Paragraph className="activity-summary" ellipsis={{ rows: 2 }}>
-                    {activity.summary || activity.registration_text || "暂无活动摘要"}
-                  </Typography.Paragraph>
+                  <div className="activity-title-divider" />
+
+                  <Tooltip title={activitySummary}>
+                    <Typography.Paragraph className="activity-summary" ellipsis={{ rows: 2 }}>
+                      {activitySummary}
+                    </Typography.Paragraph>
+                  </Tooltip>
 
                   <div className="activity-meta">
-                    <div>
-                      <CalendarOutlined />
-                      <span>{getActivityTime(activity)}</span>
-                    </div>
-                    <div>
-                      <EnvironmentOutlined />
-                      <span>{activity.location_text || "地点待确认"}</span>
-                    </div>
+                    <Tooltip title={activityTime}>
+                      <div>
+                        <CalendarOutlined />
+                        <span>{activityTime}</span>
+                      </div>
+                    </Tooltip>
+                    <Tooltip title={activityLocation}>
+                      <div>
+                        <EnvironmentOutlined />
+                        <span>{activityLocation}</span>
+                      </div>
+                    </Tooltip>
                   </div>
 
                   <div className="activity-info-list">
-                    <div>
-                      <TagsOutlined />
-                      <span>{activity.fee_text || "费用待确认"}</span>
-                    </div>
-                    <div>
-                      <TeamOutlined />
-                      <span>{activity.audience || "人群待确认"}</span>
-                    </div>
-                    {lowConfidence && (
+                    <Tooltip title={activityFee}>
                       <div>
-                        <span />
-                        <Tag color="warning">低置信度</Tag>
+                        <TagsOutlined />
+                        <span>{activityFee}</span>
                       </div>
-                    )}
+                    </Tooltip>
+                    <Tooltip title={activityAudience}>
+                      <div>
+                        <TeamOutlined />
+                        <span>{activityAudience}</span>
+                      </div>
+                    </Tooltip>
                   </div>
 
                   <div className="activity-card-footer" onClick={(event) => event.stopPropagation()}>
                     <Button type="link" size="small" icon={<ScheduleOutlined />} onClick={() => openCalendarModal(activity)}>
                       日历
                     </Button>
-                    <Button type="link" size="small" onClick={() => setSelected(activity)}>
+                    <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setSelected(activity)}>
                       查看详情
                     </Button>
                     {activity.article_url && (
@@ -416,41 +483,58 @@ export default function ActivitiesPage() {
         )}
       </Card>
 
-      <Drawer
+      <Modal
         title={selected?.title || "活动详情"}
+        centered
         open={!!selected}
-        onClose={() => {
+        footer={null}
+        onCancel={() => {
           setSelected(null);
           setEnrichmentPreview(null);
           setSelectedEnrichmentFields([]);
         }}
-        width={620}
+        width={680}
+        className="activity-detail-modal"
       >
-        <Space direction="vertical" size={12} style={{ width: "100%" }}>
-          <Space wrap>
-            <Tag color={getEventMeta(selected?.event_status).color}>{getEventMeta(selected?.event_status).label}</Tag>
-            <Tag color={getReviewMeta(selected?.review_status).color}>{getReviewMeta(selected?.review_status).label}</Tag>
-            {typeof selected?.confidence === "number" && <Tag>置信度 {selected.confidence}</Tag>}
-          </Space>
-          <Typography.Text>摘要：{selected?.summary || "-"}</Typography.Text>
-          <Typography.Text>地点：{selected?.location_text || "-"}</Typography.Text>
-          <Typography.Text>时间：{selected ? getActivityTime(selected) : "-"}</Typography.Text>
-          <Typography.Text>费用：{selected?.fee_text || "-"}</Typography.Text>
-          <Typography.Text>对象：{selected?.audience || "-"}</Typography.Text>
-          <Typography.Text>报名方式：{selected?.registration_method || "-"}</Typography.Text>
-          <Typography.Text>报名说明：{selected?.registration_text || "-"}</Typography.Text>
-          {selected?.registration_url && (
-            <Typography.Link href={selected.registration_url} target="_blank">
-              报名链接
-            </Typography.Link>
-          )}
-          {selected?.article_url && (
-            <Typography.Link href={selected.article_url} target="_blank">
-              原文链接
-            </Typography.Link>
-          )}
+        <div className="activity-detail">
+          <div className="activity-detail-tags">
+            <Space wrap size={[6, 6]}>
+              <Tag color={getEventMeta(selected?.event_status).color}>{getEventMeta(selected?.event_status).label}</Tag>
+              {typeof selected?.confidence === "number" && (
+                <Tag>置信度 {formatConfidence(selected.confidence)}</Tag>
+              )}
+            </Space>
+          </div>
+          <div className="activity-detail-summary">{selected?.summary || "暂无活动摘要"}</div>
+          <div className="activity-detail-grid">
+            {[
+              ["地点", selected?.location_text || "-"],
+              ["时间", selected ? getActivityTime(selected) : "-"],
+              ["费用", selected?.fee_text || "-"],
+              ["对象", selected?.audience || "-"],
+              ["报名方式", selected?.registration_method || "-"],
+              ["报名说明", selected?.registration_text || "-"],
+            ].map(([label, value]) => (
+              <div className="activity-detail-item" key={label}>
+                <span>{label}</span>
+                <strong>{value}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="activity-detail-links">
+            {selected?.registration_url && (
+              <Typography.Link href={selected.registration_url} target="_blank">
+                报名链接
+              </Typography.Link>
+            )}
+            {selected?.article_url && (
+              <Typography.Link href={selected.article_url} target="_blank">
+                原文链接
+              </Typography.Link>
+            )}
+          </div>
           {!!selected?.warnings?.length && (
-            <div>
+            <div className="activity-detail-warning">
               <Typography.Text strong>提示</Typography.Text>
               <div className="activity-warning-list">
                 {selected.warnings.map((warning, index) => (
@@ -461,36 +545,38 @@ export default function ActivitiesPage() {
               </div>
             </div>
           )}
-          {selected && (
-            <Space wrap>
-              <Button icon={<ScheduleOutlined />} onClick={() => openCalendarModal(selected)}>
-                添加到日历
+          <div className="activity-detail-actions">
+            {selected && (
+              <Space wrap>
+                <Button icon={<ScheduleOutlined />} onClick={() => openCalendarModal(selected)}>
+                  添加到日历
+                </Button>
+                {currentUser?.role === "admin" &&
+                  hasCriticalActivityGap(selected) &&
+                  enrichmentContext.data?.ocr_enabled &&
+                  enrichmentContext.data.image_count > 0 && (
+                    <Button
+                      loading={previewEnrichment.isPending}
+                      onClick={() => previewEnrichment.mutate(selected.id)}
+                    >
+                      从图片补充
+                    </Button>
+                  )}
+              </Space>
+            )}
+            <Popconfirm title="删除这个活动？" onConfirm={() => selected && remove.mutate(selected.id)}>
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                loading={remove.isPending}
+                disabled={remove.isPending}
+              >
+                删除活动
               </Button>
-              {currentUser?.role === "admin" &&
-                hasCriticalActivityGap(selected) &&
-                enrichmentContext.data?.ocr_enabled &&
-                enrichmentContext.data.image_count > 0 && (
-                  <Button
-                    loading={previewEnrichment.isPending}
-                    onClick={() => previewEnrichment.mutate(selected.id)}
-                  >
-                    从图片补充
-                  </Button>
-                )}
-            </Space>
-          )}
-          <Popconfirm title="删除这个活动？" onConfirm={() => selected && remove.mutate(selected.id)}>
-            <Button
-              danger
-              icon={<DeleteOutlined />}
-              loading={remove.isPending}
-              disabled={remove.isPending}
-            >
-              删除活动
-            </Button>
-          </Popconfirm>
-        </Space>
-      </Drawer>
+            </Popconfirm>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         title="从图片补充活动信息"
@@ -561,7 +647,7 @@ export default function ActivitiesPage() {
 
       <Modal
         title="添加到日历"
-        className="calendar-modal"
+        className="calendar-modal activity-calendar-modal"
         centered
         open={!!calendarActivity}
         okText="生成日历文件"

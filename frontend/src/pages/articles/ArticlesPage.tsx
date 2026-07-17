@@ -106,6 +106,15 @@ export default function ArticlesPage() {
         sortOrder,
       })),
   });
+  const extractedCountQuery = useQuery({
+    queryKey: ["articles", "extracted-count"],
+    queryFn: () =>
+      listArticles({
+        offset: 0,
+        limit: 1,
+        activity_extraction_status: "extracted",
+      }),
+  });
   const extractionSummaryQuery = useQuery({
     queryKey: ["activity-extraction-summary"],
     queryFn: getActivityExtractionSummary,
@@ -407,6 +416,7 @@ export default function ArticlesPage() {
     {
       title: "标题",
       dataIndex: "title",
+      width: 520,
       ellipsis: true,
       render: (value, record) => (
         <Button type="link" className="article-title-button" onClick={() => setSelected(record)}>
@@ -455,7 +465,7 @@ export default function ArticlesPage() {
     },
     {
       title: "操作",
-      width: 150,
+      width: 180,
       render: (_, record) => (
         <Space size={4}>
           <Button
@@ -479,7 +489,9 @@ export default function ArticlesPage() {
               type="text"
               icon={<DeleteOutlined />}
               disabled={articleDeletePending}
-            />
+            >
+              删除
+            </Button>
           </Popconfirm>
         </Space>
       ),
@@ -487,28 +499,75 @@ export default function ArticlesPage() {
   ];
 
   const rows = query.data?.list || [];
+  const articleStats = [
+    {
+      label: "总文章",
+      description: "当前筛选结果总量",
+      value: query.data?.total || rows.length,
+      tone: "blue",
+    },
+    {
+      label: "待抽取",
+      description: "可继续识别活动",
+      value: extractionSummaryQuery.data?.pending_count || 0,
+      tone: "amber",
+    },
+    {
+      label: "抽取中",
+      description: "活动识别任务队列",
+      value: activeExtractionRuns.length + (extractionSummaryQuery.data?.processing_count || 0),
+      tone: "purple",
+    },
+    {
+      label: "已抽取",
+      description: "当前已抽取文章数",
+      value: extractedCountQuery.data?.total || 0,
+      tone: "green",
+    },
+  ];
+
   return (
     <div className="page">
       <PageHeader
         title="文章"
         subtitle="查看已采集的公众号文章，并跟踪活动抽取状态。"
         actions={
-          activeCollectionRuns.length > 0 ? (
-            <Tag color="processing">采集中 {activeCollectionRuns.length}</Tag>
-          ) : undefined
+          <>
+            {activeCollectionRuns.length > 0 && (
+              <Tag color="processing">采集中 {activeCollectionRuns.length}</Tag>
+            )}
+            <Button
+              type="primary"
+              icon={<RocketOutlined />}
+              loading={batchExtractActivities.isPending}
+              disabled={
+                batchExtractActivities.isPending ||
+                !extractionSummaryQuery.data?.pending_count
+              }
+              onClick={confirmBatchExtraction}
+            >
+              {activityExtractionBatchButtonText()}
+            </Button>
+          </>
         }
       />
-      <Card className="soft-card">
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
-            marginBottom: 12,
-          }}
-        >
+      <div className="wechat-stats">
+        {articleStats.map((item) => (
+          <Card key={item.label} className="stat-card">
+            <div className={`stat-value-block stat-value-${item.tone}`}>{item.value}</div>
+            <div>
+              <div className="stat-label">{item.label}</div>
+              <div className="stat-description">{item.description}</div>
+            </div>
+          </Card>
+        ))}
+      </div>
+      <Card
+        className="soft-card content-panel article-list-panel"
+        title="文章列表"
+        extra={<span className="panel-count">共 {query.data?.total || 0} 篇文章</span>}
+      >
+        <div className="panel-toolbar">
           <Space wrap>
             <Popconfirm
               title={`删除选中的 ${selectedRowKeys.length} 篇文章？`}
@@ -549,22 +608,11 @@ export default function ArticlesPage() {
               清理过期
             </Button>
           </Space>
-          <Space wrap>
-            <Button
-              type="primary"
-              icon={<RocketOutlined />}
-              loading={batchExtractActivities.isPending}
-              disabled={
-                batchExtractActivities.isPending ||
-                !extractionSummaryQuery.data?.pending_count
-              }
-              onClick={confirmBatchExtraction}
-            >
-              {activityExtractionBatchButtonText()}
-            </Button>
-          </Space>
         </div>
         <Table
+          className="article-table"
+          tableLayout="fixed"
+          scroll={{ x: 1280 }}
           rowKey="id"
           rowSelection={rowSelection}
           loading={query.isLoading}

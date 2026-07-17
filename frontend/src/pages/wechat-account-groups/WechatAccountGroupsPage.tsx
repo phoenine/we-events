@@ -1,7 +1,6 @@
-import { DeleteOutlined, PlusOutlined, SyncOutlined } from "@ant-design/icons";
+import { ClockCircleOutlined, DeleteOutlined, EditOutlined, PlusOutlined, SyncOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, TimePicker, Tooltip, Typography } from "antd";
-import type { ColumnsType } from "antd/es/table";
+import { App, Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Tag, TimePicker, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 import {
@@ -155,116 +154,32 @@ export default function WechatAccountGroupsPage() {
       account.name || account.mp_name || account.id,
     ])
   );
+  const groups = normalize(query.data);
+  const enabledGroupCount = groups.filter((group) => group.status !== 0).length;
+  const coveredAccountCount = groups.reduce(
+    (total, group) =>
+      total + (group.wechat_account_count ?? parseGroupAccountIds(group.wechat_account_ids).length),
+    0
+  );
 
-  const columns: ColumnsType<WechatAccountGroup> = [
-    { title: "名称", dataIndex: "name", width: 180 },
-    {
-      title: "公众号",
-      dataIndex: "wechat_account_ids",
-      render: (_, record) => {
-        const accountIds = parseGroupAccountIds(record.wechat_account_ids);
-        if (!accountIds.length) return "-";
-        return (
-          <Space wrap size={[6, 6]}>
-            {accountIds.map((accountId) => (
-              <Tag key={accountId}>{accountNameById.get(accountId) || accountId}</Tag>
-            ))}
-          </Space>
-        );
-      },
-    },
-    {
-      title: "公众号数",
-      dataIndex: "wechat_account_count",
-      width: 100,
-      render: (_, record) => record.wechat_account_count ?? parseGroupAccountIds(record.wechat_account_ids).length,
-    },
-    {
-      title: "状态",
-      dataIndex: "status",
-      width: 90,
-      render: (value) => <Tag color={value === 0 ? "default" : "success"}>{value === 0 ? "停用" : "启用"}</Tag>,
-    },
-    {
-      title: "定时采集",
-      width: 150,
-      render: (_, record) => {
-        return <span>{formatGroupCollectionSchedule(record)}</span>;
-      },
-    },
-    {
-      title: "采集结果",
-      width: 190,
-      render: (_, record) => {
-        if (!hasGroupCollectionResult(record)) return "-";
-        const runLabel = groupCollectionRunLabel(
-          record.last_collection_run,
-          record.last_schedule_error
-        );
-        const lastTime = record.last_scheduled_at
-          ? dayjs(record.last_scheduled_at).format("YYYY-MM-DD HH:mm")
-          : "";
-        return (
-          <Tooltip title={record.last_schedule_error || record.last_collection_run?.error}>
-            <Space size={4}>
-              <Tag
-                color={groupCollectionRunColor(
-                  record.last_collection_run,
-                  record.last_schedule_error
-                )}
-              >
-                {runLabel}
-              </Tag>
-              {lastTime && <Typography.Text type="secondary">{lastTime}</Typography.Text>}
-            </Space>
-          </Tooltip>
-        );
-      },
-    },
-    {
-      title: "操作",
-      width: 300,
-      render: (_, record) => (
-        <Space>
-          <Button type="text" icon={<SyncOutlined />} onClick={() => setSyncing(record)}>
-            采集
-          </Button>
-          {currentUser?.role === "admin" && (
-            <Button
-              type="text"
-              onClick={() => {
-                setScheduling(record);
-                scheduleForm.setFieldsValue({
-                  enabled: Boolean(record.schedule_enabled),
-                  time: record.schedule_time
-                    ? dayjs(`2000-01-01T${record.schedule_time}`)
-                    : null,
-                  collection_pages: record.collection_pages || 1,
-                });
-              }}
-            >
-              定时设置
-            </Button>
-          )}
-          <Button
-            type="link"
-            onClick={() => {
-              setEditing(record);
-              form.setFieldsValue({
-                ...record,
-                wechat_account_ids: parseGroupAccountIds(record.wechat_account_ids),
-              });
-            }}
-          >
-            编辑
-          </Button>
-          <Popconfirm title="删除这个分组？" onConfirm={() => remove.mutate(record.id)}>
-            <Button danger type="text" icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
+  const openSchedule = (record: WechatAccountGroup) => {
+    setScheduling(record);
+    scheduleForm.setFieldsValue({
+      enabled: Boolean(record.schedule_enabled),
+      time: record.schedule_time
+        ? dayjs(`2000-01-01T${record.schedule_time}`)
+        : null,
+      collection_pages: record.collection_pages || 1,
+    });
+  };
+
+  const openEdit = (record: WechatAccountGroup) => {
+    setEditing(record);
+    form.setFieldsValue({
+      ...record,
+      wechat_account_ids: parseGroupAccountIds(record.wechat_account_ids),
+    });
+  };
 
   return (
     <div className="page">
@@ -287,14 +202,105 @@ export default function WechatAccountGroupsPage() {
           </>
         }
       />
-      <Card className="soft-card">
-        <Table
-          rowKey="id"
-          loading={query.isLoading}
-          columns={columns}
-          dataSource={normalize(query.data)}
-          locale={{ emptyText: <EmptyState description="暂无公众号分组" /> }}
-        />
+      <div className="wechat-stats">
+        {[
+          { label: "分组数", description: "当前业务来源集合", value: groups.length, tone: "blue" },
+          { label: "启用中", description: "可参与采集的分组", value: enabledGroupCount, tone: "green" },
+          { label: "覆盖来源", description: "分组内公众号数量", value: coveredAccountCount, tone: "purple" },
+          { label: "采集中", description: "正在执行的采集任务", value: activeCollectionRuns.length, tone: "amber" },
+        ].map((item) => (
+          <Card key={item.label} className="stat-card">
+            <div className={`stat-value-block stat-value-${item.tone}`}>{item.value}</div>
+            <div>
+              <div className="stat-label">{item.label}</div>
+              <div className="stat-description">{item.description}</div>
+            </div>
+          </Card>
+        ))}
+      </div>
+      <Card
+        className="soft-card source-list-panel"
+        title="分组列表"
+        extra={<span className="panel-count">共 {groups.length} 个分组</span>}
+        loading={query.isLoading}
+      >
+        {groups.length ? (
+          <div className="group-card-grid">
+            {groups.map((group) => {
+              const accountIds = parseGroupAccountIds(group.wechat_account_ids);
+              const runLabel = hasGroupCollectionResult(group)
+                ? groupCollectionRunLabel(group.last_collection_run, group.last_schedule_error)
+                : "暂无结果";
+              const lastTime = group.last_scheduled_at
+                ? dayjs(group.last_scheduled_at).format("YYYY-MM-DD HH:mm")
+                : "";
+
+              return (
+                <Card key={group.id} className="source-card group-card" hoverable>
+                  <div className="group-card-head">
+                    <div className="group-card-title">
+                      <div className="source-name">{group.name}</div>
+                      <div className="source-id">{formatGroupCollectionSchedule(group)}</div>
+                    </div>
+                    <Tag color={group.schedule_enabled ? "success" : "default"}>
+                      {group.schedule_enabled ? "已启用" : "未启用"}
+                    </Tag>
+                  </div>
+
+                  <div className="group-account-tags">
+                    {accountIds.length ? (
+                      accountIds.slice(0, 8).map((accountId) => (
+                        <Tag key={accountId}>{accountNameById.get(accountId) || accountId}</Tag>
+                      ))
+                    ) : (
+                      <Typography.Text type="secondary">暂无公众号</Typography.Text>
+                    )}
+                    {accountIds.length > 8 && <Tag>+{accountIds.length - 8}</Tag>}
+                  </div>
+
+                  <div className="group-result-row">
+                    <Tooltip title={group.last_schedule_error || group.last_collection_run?.error}>
+                      <Tag
+                        color={
+                          hasGroupCollectionResult(group)
+                            ? groupCollectionRunColor(group.last_collection_run, group.last_schedule_error)
+                            : "default"
+                        }
+                      >
+                        {runLabel}
+                      </Tag>
+                    </Tooltip>
+                    {lastTime && <span className="source-last-fetch">{lastTime}</span>}
+                  </div>
+
+                  <div className="source-card-bottom">
+                    <span className="source-last-fetch">
+                      {group.wechat_account_count ?? accountIds.length} 个公众号
+                    </span>
+                    <Space size={8} wrap>
+                      <Button size="small" className="source-action-main" icon={<SyncOutlined />} onClick={() => setSyncing(group)}>
+                        采集
+                      </Button>
+                      {currentUser?.role === "admin" && (
+                        <Button size="small" className="source-action-main" icon={<ClockCircleOutlined />} onClick={() => openSchedule(group)}>
+                          定时
+                        </Button>
+                      )}
+                      <Button size="small" className="source-action-main" icon={<EditOutlined />} onClick={() => openEdit(group)}>
+                        编辑
+                      </Button>
+                      <Popconfirm title="删除这个分组？" onConfirm={() => remove.mutate(group.id)}>
+                        <Button danger size="small" className="source-icon-button" icon={<DeleteOutlined />} />
+                      </Popconfirm>
+                    </Space>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState description="暂无公众号分组" />
+        )}
       </Card>
       <Modal
         title={editing?.id ? "编辑分组" : "新建分组"}

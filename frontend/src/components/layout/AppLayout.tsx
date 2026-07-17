@@ -100,7 +100,12 @@ export default function AppLayout() {
       >
         <div className="app-logo">
           <div className="logo-mark">活</div>
-          {!collapsed && <span>we-events</span>}
+          {!collapsed && (
+            <div className="logo-copy">
+              <span>we-events</span>
+              <small>采集管理台</small>
+            </div>
+          )}
         </div>
         <Menu mode="inline" selectedKeys={selectedKey} items={menuItems} />
       </Sider>
@@ -115,7 +120,7 @@ export default function AppLayout() {
             <Typography.Text strong>后台管理</Typography.Text>
           </div>
           <Dropdown menu={{ items: userMenu, onClick: onUserMenuClick }} trigger={["click"]}>
-            <Button type="text">
+            <Button type="text" className="account-button">
               <Avatar size={28} icon={<UserOutlined />} /> {user?.nickname || user?.username || "账户"}
             </Button>
           </Dropdown>
