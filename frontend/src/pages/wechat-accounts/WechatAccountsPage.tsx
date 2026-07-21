@@ -6,8 +6,7 @@ import {
   SyncOutlined,
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Avatar, Button, Card, Input, Popconfirm, Space, Table, Tag, Tooltip } from "antd";
-import type { ColumnsType } from "antd/es/table";
+import { App, Avatar, Button, Card, Input, Pagination, Popconfirm, Space, Tag, Tooltip } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -26,6 +25,21 @@ import {
   removeArticleCollectionRuns,
 } from "@/utils/articleCollectionRuns";
 import { removeIdsFromApiList } from "@/utils/optimisticDelete";
+
+const avatarColors = ["#3B82F6", "#0891B2", "#16A34A", "#F59E0B", "#635BFF", "#E11D48"];
+
+function getAccountName(account: WechatAccount) {
+  return account.name || account.mp_name || account.id;
+}
+
+function getAccountInitial(account: WechatAccount) {
+  return getAccountName(account).trim().slice(0, 1).toUpperCase() || "?";
+}
+
+function getAccountLastFetch(account: WechatAccount) {
+  const value = account.last_fetch || account.sync_time || account.update_time;
+  return value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "尚未采集";
+}
 
 export default function WechatAccountsPage() {
   const [page, setPage] = useState(1);
@@ -115,79 +129,9 @@ export default function WechatAccountsPage() {
     [activeCollectionRuns]
   );
 
-  const columns: ColumnsType<WechatAccount> = [
-    {
-      title: "公众号",
-      dataIndex: "name",
-      width: 240,
-      render: (_, record) => (
-        <div className="wechat-account-cell">
-          <Avatar src={record.logo_url || record.mp_cover}>
-            {(record.name || record.mp_name || "?").slice(0, 1)}
-          </Avatar>
-          <div className="wechat-account-main">
-            <div className="wechat-account-name">{record.name || record.mp_name || record.id}</div>
-            <small className="wechat-account-id">{record.faker_id || record.id}</small>
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: "描述",
-      dataIndex: "description",
-      width: 360,
-      ellipsis: true,
-      render: (_, record) => (
-        <span className="wechat-account-description">{record.description || record.mp_intro || "-"}</span>
-      ),
-    },
-    {
-      title: "状态",
-      dataIndex: "status",
-      width: 90,
-      render: (value) => <Tag color={value === 0 ? "default" : "success"}>{value === 0 ? "停用" : "启用"}</Tag>,
-    },
-    {
-      title: "最近采集",
-      dataIndex: "last_fetch",
-      width: 180,
-      render: (_, record) => {
-        const value = record.last_fetch || record.sync_time || record.update_time;
-        return value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "-";
-      },
-    },
-    {
-      title: "操作",
-      width: 210,
-      render: (_, record) => (
-        <Space>
-          <Button type="text" icon={<SyncOutlined />} onClick={() => sync.mutate(record.id)}>
-            采集
-          </Button>
-          <Tooltip title="复制公众号标识">
-            <Button
-              type="text"
-              icon={<CopyOutlined />}
-              onClick={() => {
-                navigator.clipboard.writeText(record.faker_id || record.id);
-                message.success("已复制");
-              }}
-            />
-          </Tooltip>
-          <Popconfirm title="删除这个公众号？" onConfirm={() => remove.mutate(record.id)}>
-            <Button
-              danger
-              type="text"
-              icon={<DeleteOutlined />}
-              disabled={remove.isPending}
-            />
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
-
   const rows = query.data?.list || [];
+  const enabledCount = rows.filter((row) => row.status !== 0).length;
+
   return (
     <div className="page">
       <PageHeader
@@ -220,28 +164,99 @@ export default function WechatAccountsPage() {
           </>
         }
       />
-      <Card className="soft-card">
-        <Table
-          tableLayout="fixed"
-          scroll={{ x: 1080 }}
-          rowKey="id"
-          loading={query.isLoading}
-          columns={columns}
-          dataSource={rows}
-          locale={{ emptyText: <EmptyState description="暂无公众号" /> }}
-          pagination={{
-            current: page,
-            pageSize,
-            total: query.data?.total || 0,
-            showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 个公众号`,
-            pageSizeOptions: [10, 20, 50, 100],
-            onChange: (nextPage, nextPageSize) => {
-              setPage(nextPage);
-              setPageSize(nextPageSize);
-            },
-          }}
-        />
+      <div className="wechat-stats">
+        {[
+          { label: "已接入", description: "可用于文章采集的来源", value: query.data?.total || rows.length, tone: "green" },
+          { label: "启用中", description: "当前启用的公众号", value: enabledCount, tone: "blue" },
+          { label: "采集中", description: "正在执行的采集任务", value: activeCollectionRunCount, tone: "amber" },
+        ].map((item) => (
+          <Card key={item.label} className="stat-card">
+            <div className={`stat-value-block stat-value-${item.tone}`}>{item.value}</div>
+            <div>
+              <div className="stat-label">{item.label}</div>
+              <div className="stat-description">{item.description}</div>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      <Card
+        className="soft-card source-list-panel"
+        title="公众号列表"
+        extra={<span className="panel-count">共 {query.data?.total || 0} 个公众号</span>}
+        loading={query.isLoading}
+      >
+        {rows.length ? (
+          <>
+            <div className="source-card-grid">
+              {rows.map((account, index) => (
+                <Card key={account.id} className="source-card" hoverable>
+                  <div className="source-card-main">
+                    <Avatar
+                      className="source-avatar"
+                      src={account.logo_url || account.mp_cover}
+                      style={{ backgroundColor: avatarColors[index % avatarColors.length] }}
+                    >
+                      {getAccountInitial(account)}
+                    </Avatar>
+                    <div className="source-text">
+                      <div className="source-name">{getAccountName(account)}</div>
+                      <div className="source-id">{account.faker_id || account.id}</div>
+                    </div>
+                  </div>
+
+                  <div className="source-card-bottom">
+                    <div className="source-last-fetch">最近采集 {getAccountLastFetch(account)}</div>
+                    <Space size={8}>
+                      <Tooltip title="采集">
+                        <Button
+                          className="source-icon-button"
+                          icon={<SyncOutlined />}
+                          loading={sync.isPending}
+                          onClick={() => sync.mutate(account.id)}
+                        />
+                      </Tooltip>
+                      <Tooltip title="复制公众号标识">
+                        <Button
+                          className="source-icon-button"
+                          icon={<CopyOutlined />}
+                          onClick={() => {
+                            navigator.clipboard.writeText(account.faker_id || account.id);
+                            message.success("已复制");
+                          }}
+                        />
+                      </Tooltip>
+                      <Popconfirm title="删除这个公众号？" onConfirm={() => remove.mutate(account.id)}>
+                        <Button
+                          danger
+                          className="source-icon-button"
+                          icon={<DeleteOutlined />}
+                          disabled={remove.isPending}
+                        />
+                      </Popconfirm>
+                    </Space>
+                  </div>
+                </Card>
+              ))}
+            </div>
+            <div className="source-pagination">
+              <Pagination
+                current={page}
+                pageSize={pageSize}
+                total={query.data?.total || 0}
+                showSizeChanger
+                showTotal={(total) => `共 ${total} 个公众号`}
+                pageSizeOptions={[10, 20, 50, 100]}
+                onChange={(nextPage, nextPageSize) => {
+                  setPage(nextPage);
+                  setPageSize(nextPageSize);
+                }}
+              />
+            </div>
+          </>
+        ) : (
+          <EmptyState description="暂无公众号" />
+        )}
       </Card>
     </div>
   );

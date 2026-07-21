@@ -5,12 +5,9 @@ import {
   Button,
   Card,
   Form,
-  Input,
   InputNumber,
   Select,
-  Space,
   Switch,
-  Typography,
 } from "antd";
 import { useEffect, useMemo } from "react";
 import { createConfig, listConfigs, updateConfig } from "@/api/configs";
@@ -32,15 +29,9 @@ interface ConfigValues {
   activity_auto_extract?: boolean;
   activity_use_images?: boolean;
   activity_low_confidence_policy?: string;
-  llm_enabled?: boolean;
-  llm_api_base?: string;
-  llm_model?: string;
-  llm_max_tokens?: number;
-  llm_temperature?: number;
   llm_use_for_extraction?: boolean;
   llm_use_for_fallback?: boolean;
   llm_use_for_image?: boolean;
-  llm_retry_count?: number;
   ocr_enabled?: boolean;
 }
 
@@ -55,15 +46,9 @@ const CONFIG_FIELDS: ConfigField[] = [
     type: "string",
     description: "低置信度处理策略",
   },
-  { key: "llm.enabled", type: "boolean", description: "启用 LLM" },
-  { key: "llm.api_base", type: "string", description: "LLM API Base URL" },
-  { key: "llm.model", type: "string", description: "LLM 模型" },
-  { key: "llm.max_tokens", type: "number", description: "单次抽取 token 上限" },
-  { key: "llm.temperature", type: "number", description: "LLM 温度" },
   { key: "llm.use_for_extraction", type: "boolean", description: "用于活动抽取" },
   { key: "llm.use_for_fallback", type: "boolean", description: "用于正文采集兜底" },
   { key: "llm.use_for_image", type: "boolean", description: "用于图片信息理解" },
-  { key: "llm.retry_count", type: "number", description: "失败重试次数" },
   { key: "ocr.enabled", type: "boolean", description: "启用活动图片 OCR 补充" },
 ];
 
@@ -74,15 +59,9 @@ const DEFAULT_VALUES: Required<ConfigValues> = {
   activity_auto_extract: true,
   activity_use_images: true,
   activity_low_confidence_policy: "review",
-  llm_enabled: false,
-  llm_api_base: "https://api.siliconflow.cn/v1/chat/completions",
-  llm_model: "Qwen/Qwen3-32B",
-  llm_max_tokens: 8192,
-  llm_temperature: 0.2,
   llm_use_for_extraction: true,
   llm_use_for_fallback: true,
   llm_use_for_image: true,
-  llm_retry_count: 1,
   ocr_enabled: false,
 };
 
@@ -136,6 +115,21 @@ export default function ConfigsPage() {
     () => new Set((query.data?.list || []).map((item) => item.key)),
     [query.data?.list]
   );
+  const currentValues = Form.useWatch([], form) || DEFAULT_VALUES;
+  const enabledFeatureCount = [
+    currentValues.activity_auto_extract,
+    currentValues.activity_use_images,
+    currentValues.llm_use_for_extraction,
+    currentValues.llm_use_for_fallback,
+    currentValues.llm_use_for_image,
+    currentValues.ocr_enabled,
+  ].filter(Boolean).length;
+  const configStats = [
+    { label: "配置项", description: "运行配置字段", value: CONFIG_FIELDS.length, tone: "blue" },
+    { label: "已启用", description: "功能开关数量", value: enabledFeatureCount, tone: "green" },
+    { label: "采集页数", description: "单次来源页数上限", value: currentValues.max_page || DEFAULT_VALUES.max_page, tone: "purple" },
+    { label: "请求间隔", description: "采集请求间隔秒数", value: currentValues.interval || DEFAULT_VALUES.interval, tone: "amber" },
+  ];
 
   useEffect(() => {
     form.setFieldsValue(buildInitialValues(query.data?.list || []));
@@ -179,14 +173,25 @@ export default function ConfigsPage() {
           </Button>
         }
       />
+      <div className="wechat-stats">
+        {configStats.map((item) => (
+          <Card key={item.label} className="stat-card">
+            <div className={`stat-value-block stat-value-${item.tone}`}>{item.value}</div>
+            <div>
+              <div className="stat-label">{item.label}</div>
+              <div className="stat-description">{item.description}</div>
+            </div>
+          </Card>
+        ))}
+      </div>
       <Form
         form={form}
         layout="vertical"
         initialValues={DEFAULT_VALUES}
         onFinish={(values) => save.mutate(values)}
       >
-        <Space direction="vertical" size={16} style={{ width: "100%" }}>
-          <Card className="soft-card" title="采集节奏">
+        <div className="config-section-grid">
+          <Card className="soft-card settings-panel" title="采集节奏">
             <div className="settings-grid">
               <Form.Item name="max_page" label="单次采集页数上限">
                 <InputNumber min={1} max={50} precision={0} style={{ width: "100%" }} />
@@ -200,21 +205,21 @@ export default function ConfigsPage() {
             </div>
           </Card>
 
-          <Card className="soft-card" title="活动抽取">
+          <Card className="soft-card settings-panel" title="活动抽取">
             <div className="settings-grid">
               <Form.Item
                 name="activity_auto_extract"
                 label="采集后自动抽取活动"
                 valuePropName="checked"
               >
-                <Switch />
+                <Switch checkedChildren="启用" unCheckedChildren="关闭" />
               </Form.Item>
               <Form.Item
                 name="activity_use_images"
                 label="读取图片信息"
                 valuePropName="checked"
               >
-                <Switch />
+                <Switch checkedChildren="启用" unCheckedChildren="关闭" />
               </Form.Item>
               <Form.Item name="activity_low_confidence_policy" label="低置信度处理">
                 <Select
@@ -228,74 +233,44 @@ export default function ConfigsPage() {
             </div>
           </Card>
 
-          <Card className="soft-card" title="LLM">
+          <Card className="soft-card settings-panel" title="LLM">
             <div className="settings-grid">
-              <Form.Item name="llm_enabled" label="启用 LLM" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-              <Form.Item label="API Key">
-                <Input disabled value="由后端环境变量 LLM_API_KEY 管理" />
-              </Form.Item>
-              <Form.Item name="llm_api_base" label="API Base URL">
-                <Input />
-              </Form.Item>
-              <Form.Item name="llm_model" label="模型">
-                <Input />
-              </Form.Item>
-              <Form.Item name="llm_max_tokens" label="Token 上限">
-                <InputNumber min={512} max={128000} precision={0} style={{ width: "100%" }} />
-              </Form.Item>
-              <Form.Item name="llm_temperature" label="温度">
-                <InputNumber min={0} max={2} step={0.1} style={{ width: "100%" }} />
-              </Form.Item>
-              <Form.Item name="llm_retry_count" label="失败重试次数">
-                <InputNumber min={0} max={5} precision={0} style={{ width: "100%" }} />
-              </Form.Item>
               <Form.Item
                 name="llm_use_for_extraction"
                 label="用于活动抽取"
                 valuePropName="checked"
               >
-                <Switch />
+                <Switch checkedChildren="启用" unCheckedChildren="关闭" />
               </Form.Item>
               <Form.Item
                 name="llm_use_for_fallback"
                 label="用于正文兜底"
                 valuePropName="checked"
               >
-                <Switch />
+                <Switch checkedChildren="启用" unCheckedChildren="关闭" />
               </Form.Item>
               <Form.Item
                 name="llm_use_for_image"
                 label="用于图片理解"
                 valuePropName="checked"
               >
-                <Switch />
+                <Switch checkedChildren="启用" unCheckedChildren="关闭" />
               </Form.Item>
             </div>
-            <Typography.Text type="secondary">
-              API Key 不写入运行时配置表，后端通过环境变量读取。
-            </Typography.Text>
           </Card>
 
-          <Card className="soft-card" title="图片 OCR 补充">
+          <Card className="soft-card settings-panel" title="图片 OCR 补充">
             <div className="settings-grid">
               <Form.Item
                 name="ocr_enabled"
                 label="启用活动图片 OCR 补充"
                 valuePropName="checked"
               >
-                <Switch />
-              </Form.Item>
-              <Form.Item label="API 配置">
-                <Input
-                  disabled
-                  value="由后端环境变量 OCR_API_BASE、OCR_API_KEY、OCR_MODEL 管理"
-                />
+                <Switch checkedChildren="启用" unCheckedChildren="关闭" />
               </Form.Item>
             </div>
           </Card>
-        </Space>
+        </div>
       </Form>
     </div>
   );

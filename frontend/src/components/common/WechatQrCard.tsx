@@ -1,10 +1,17 @@
-import { Button, Card, Image, Space, Spin, Tag, Typography } from "antd";
+import { QrcodeOutlined, QuestionCircleOutlined, ReloadOutlined } from "@ant-design/icons";
+import { Button, Card, Image, Space, Spin, Tag } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { getQrStatus, getQrUrl, requestQrCode } from "@/api/auth";
 
 type QrState = "idle" | "loading" | "waiting" | "success" | "error";
 
-export default function WechatQrCard() {
+type WechatQrCardProps = {
+  statusColor?: string;
+  statusLabel?: string;
+  statusMessage?: string;
+};
+
+export default function WechatQrCard({ statusColor = "default", statusLabel = "未授权", statusMessage }: WechatQrCardProps) {
   const [state, setState] = useState<QrState>("idle");
   const [qrUrl, setQrUrl] = useState("");
   const [error, setError] = useState("");
@@ -53,6 +60,7 @@ export default function WechatQrCard() {
         const status = await getQrStatus();
         if (status?.login_status) {
           clearTimers();
+          setQrUrl("");
           setState("success");
         }
       }, 3000);
@@ -62,32 +70,58 @@ export default function WechatQrCard() {
     }
   };
 
+  const stateTag =
+    state === "waiting" ? (
+      <Tag color="processing">等待扫码确认</Tag>
+    ) : state === "success" ? (
+      <Tag color="success">授权成功</Tag>
+    ) : state === "error" ? (
+      <Tag color="error">{error || "授权异常"}</Tag>
+    ) : null;
+  const shouldShowQrPanel = statusColor !== "success" || state === "loading" || state === "waiting" || Boolean(qrUrl);
+
   return (
-    <Card className="soft-card qr-card" title="公众号扫码授权">
-      <Space direction="vertical" size={14} style={{ width: "100%" }}>
-        <Typography.Text type="secondary">
-          公众号登录态由系统维护，普通用户只读取已采集的数据。
-        </Typography.Text>
-        {state === "loading" && (
-          <Space>
-            <Spin /> <span>正在生成二维码...</span>
-          </Space>
-        )}
-        {qrUrl && (
-          <Image
-            src={qrUrl}
-            width={220}
-            height={220}
-            style={{ objectFit: "contain", background: "#fff", borderRadius: 8 }}
-          />
-        )}
-        {state === "waiting" && <Tag color="processing">等待扫码确认</Tag>}
-        {state === "success" && <Tag color="success">授权成功</Tag>}
-        {state === "error" && <Tag color="error">{error || "授权异常"}</Tag>}
-        <Button type="primary" onClick={start} loading={state === "loading"}>
-          {state === "idle" ? "申请二维码" : "重新申请二维码"}
+    <Card className="soft-card qr-card system-qr-card">
+      <div className="system-card-title-row">
+        <div>
+          <h2>公众号扫码授权</h2>
+          <p>采集登录态由系统维护，普通用户只读取已采集数据。</p>
+        </div>
+        <Tag color={statusColor}>{statusLabel}</Tag>
+      </div>
+      {shouldShowQrPanel && (
+        <div className="qr-display-panel">
+          {state === "loading" && (
+            <Space className="qr-loading-state">
+              <Spin /> <span>正在生成二维码...</span>
+            </Space>
+          )}
+          {qrUrl && (
+            <Image
+              src={qrUrl}
+              width={220}
+              height={220}
+              style={{ objectFit: "contain", background: "#fff", borderRadius: 8 }}
+            />
+          )}
+          {!qrUrl && state !== "loading" && (
+            <div className="qr-placeholder-card">
+              <QrcodeOutlined />
+            </div>
+          )}
+          <span>扫码后更新公众号登录态</span>
+        </div>
+      )}
+      <div className="system-qr-actions">
+        {stateTag}
+        <Button type="primary" icon={<ReloadOutlined />} onClick={start} loading={state === "loading"}>
+          {statusColor === "success" && state === "idle" ? "重新申请" : state === "idle" ? "申请二维码" : "重新申请"}
         </Button>
-      </Space>
+      </div>
+      <div className={`system-auth-note ${statusColor === "success" ? "system-auth-note-success" : ""}`}>
+        <QuestionCircleOutlined />
+        <p>{statusMessage || "微信登录态无法保证永久保活，过期或采集失败时重新扫码。"}</p>
+      </div>
     </Card>
   );
 }

@@ -21,14 +21,23 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       locale={zhCN}
       theme={{
         token: {
-          colorPrimary: "#1677ff",
-          borderRadius: 6,
-          fontFamily:
-            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          colorPrimary: "#2563EB",
+          borderRadius: 8,
+          colorText: "#111827",
+          colorTextSecondary: "#667085",
+          colorBorder: "#E5E7EB",
+          colorBgLayout: "#F5F7FB",
+          fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         },
         components: {
-          Card: { borderRadiusLG: 8 },
-          Button: { borderRadius: 6 },
+          Card: { borderRadiusLG: 12 },
+          Button: { borderRadius: 8 },
+          Menu: {
+            itemBorderRadius: 10,
+            itemHeight: 44,
+            itemSelectedBg: "#EFF6FF",
+            itemSelectedColor: "#1D4ED8",
+          },
         },
       }}
     >
